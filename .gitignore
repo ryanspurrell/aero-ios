@@ -1,0 +1,4 @@
+*.xcodeproj
+Aero/Info.plist
+build/
+*.p8

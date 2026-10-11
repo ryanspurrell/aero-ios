@@ -1,0 +1,50 @@
+# XcodeGen spec for the Aero iPhone app. Step 1: the shell only.
+# Generate the Xcode project with `xcodegen generate` (see README.md).
+name: Aero
+
+options:
+  deploymentTarget:
+    iOS: "16.4"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    # Placeholders. The workflow overrides these on the xcodebuild command
+    # line from repository variables and secrets (see README.md). The bundle
+    # identifier cannot change after the first upload to App Store Connect.
+    PRODUCT_NAME: Aero
+    PRODUCT_BUNDLE_IDENTIFIER: com.example.aero
+    # What the address field starts with on first launch. Empty by default.
+    # The address itself is entered in the app and kept on the phone.
+    AERO_DEFAULT_ADDRESS: ""
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    # Signing is automatic. No team is written here: the check job turns
+    # signing off, and the upload job passes the team on the command line.
+    CODE_SIGN_STYLE: Automatic
+
+targets:
+  Aero:
+    type: application
+    platform: iOS
+    sources:
+      - path: Aero
+    info:
+      path: Aero/Info.plist
+      properties:
+        CFBundleDisplayName: "$(PRODUCT_NAME)"
+        AeroDefaultAddress: "$(AERO_DEFAULT_ADDRESS)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSCameraUsageDescription: "Aero uses the camera for video calls and for photos you take in Aero."
+        NSMicrophoneUsageDescription: "Aero uses the microphone for calls, voice messages and dictation."
+        NSPhotoLibraryUsageDescription: "Aero lets you pick photos and videos from your library to send or save."
+        NSPhotoLibraryAddUsageDescription: "Aero saves photos and videos you choose to your library."
+        # Only standard HTTPS is used, so no export paperwork is asked for.
+        ITSAppUsesNonExemptEncryption: false
