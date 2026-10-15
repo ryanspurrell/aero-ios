@@ -4,9 +4,15 @@ import SwiftUI
 struct AeroApp: App {
     var body: some Scene {
         WindowGroup {
-            WebScreen()
-                .ignoresSafeArea()
-                .background(Color(red: 0.06, green: 0.10, blue: 0.11))
+            if let screen = UserDefaults.standard.string(forKey: "aero-screen") {
+                // Drawing the native screens from invented samples, for screenshots:
+                // launch with `-aero-screen front`, `quickadd` or `chats`. No server.
+                NativeRoot(source: SampleSource(), start: screen == "quickadd" ? [.quickAdd] : screen == "chats" ? [.chats] : [])
+            } else {
+                WebScreen()
+                    .ignoresSafeArea()
+                    .background(Color(red: 0.06, green: 0.10, blue: 0.11))
+            }
         }
     }
 }

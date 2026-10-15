@@ -69,6 +69,20 @@ What could go wrong:
   type other than `linkActivated` is expected from its documented behaviour
   but is not tried here (see the unverified list).
 
+## Native screens (started)
+
+`Aero/Native/` holds the first native SwiftUI screens, drawn from data the
+server already sends, with no web view: the front (Carry on, Tonight, Chats,
+a large Talk button), Organizer's quick add (one grouped form) and the chat
+list. They use standard controls (List, Form, DatePicker, DisclosureGroup)
+and system text styles, so VoiceOver, Dynamic Type and Switch Control apply.
+They are not the normal launch yet: that needs a sign-in step to get a device
+token. Launch with `-aero-screen front|quickadd|chats` to draw them from
+invented samples (`Fixtures.swift`); the workflow's `screenshots` job does
+this in the simulator and keeps the pictures. Not drawn yet: the face, voice
+(the Talk button does nothing), a chat's title and newest line (opened on the
+device from sealed messages), Aero's own look (`/look.json`).
+
 ## Building with no Mac
 
 The Xcode project is not stored; `project.yml` describes it and

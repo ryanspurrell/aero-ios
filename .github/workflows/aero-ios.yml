@@ -4,6 +4,10 @@ name: Aero iOS
 on:
   workflow_dispatch:
     inputs:
+      screenshots:
+        description: "Also draw the native screens in the simulator and keep screenshots"
+        type: boolean
+        default: true
       upload:
         description: "Also sign and upload a build to TestFlight (needs the three App Store Connect secrets)"
         type: boolean
@@ -43,6 +47,68 @@ jobs:
       - name: Print how long this job took
         if: always()
         run: echo "check job took $(( $(date +%s) - STARTED_AT )) seconds"
+
+  screenshots:
+    # Draws the native screens in the iOS Simulator from invented sample data
+    # (launch argument -aero-screen, no server) and keeps the pictures as a
+    # download on the run, so the screens can be looked at with no Mac or phone.
+    # Not run yet: written on Linux. Needs no Apple account.
+    if: inputs.screenshots
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_PATH"
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: xcodegen generate
+      - name: Pick an iPhone simulator
+        run: |
+          set -eu
+          udid="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          for runtime, devices in json.load(sys.stdin)["devices"].items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith("iPhone") and "Pro" not in d["name"] and "Air" not in d["name"]:
+                          print(d["udid"]); raise SystemExit
+          ')"
+          test -n "$udid"
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+      - name: Build for the simulator
+        run: |
+          xcodebuild build \
+            -project Aero.xcodeproj -scheme Aero -configuration Debug \
+            -sdk iphonesimulator -destination "id=$SIM_UDID" \
+            -derivedDataPath build CODE_SIGNING_ALLOWED=NO \
+            PRODUCT_NAME="$AERO_NAME" PRODUCT_BUNDLE_IDENTIFIER="$AERO_BUNDLE_ID"
+      - name: Install, launch each screen, take pictures
+        run: |
+          set -eu
+          mkdir -p shots
+          xcrun simctl boot "$SIM_UDID"
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          app="$(find build/Build/Products -name '*.app' -maxdepth 3 | head -n 1)"
+          xcrun simctl install "$SIM_UDID" "$app"
+          for screen in front quickadd chats; do
+            xcrun simctl launch "$SIM_UDID" "$AERO_BUNDLE_ID" -aero-screen "$screen"
+            sleep 4
+            xcrun simctl io "$SIM_UDID" screenshot "shots/$screen.png"
+            xcrun simctl terminate "$SIM_UDID" "$AERO_BUNDLE_ID"
+          done
+          # The same three at the largest accessibility text size, to see Dynamic Type hold.
+          xcrun simctl ui "$SIM_UDID" content_size accessibility-extra-extra-extra-large
+          for screen in front quickadd chats; do
+            xcrun simctl launch "$SIM_UDID" "$AERO_BUNDLE_ID" -aero-screen "$screen"
+            sleep 4
+            xcrun simctl io "$SIM_UDID" screenshot "shots/$screen-large-text.png"
+            xcrun simctl terminate "$SIM_UDID" "$AERO_BUNDLE_ID"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aero-screens
+          path: shots/*.png
 
   gate:
     # Decides whether the upload may run. Secrets cannot be tested in a
