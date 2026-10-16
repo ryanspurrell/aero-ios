@@ -53,6 +53,9 @@ targets:
     settings:
       base:
         SWIFT_OBJC_BRIDGING_HEADER: Aero/Aero-Bridging-Header.h
+        # iPhone only, set on the target too: XcodeGen's target defaults made the
+        # build universal, and Apple then asked for iPad icons and orientations.
+        TARGETED_DEVICE_FAMILY: "1"
         # The build script below copies the Python standard library and the reader into the app after it is built.
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
         ENABLE_BITCODE: "NO"
