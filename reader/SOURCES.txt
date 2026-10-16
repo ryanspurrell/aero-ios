@@ -1,0 +1,6 @@
+# What is in this folder and where it came from (tools/sync_reader.py). sha256 of each file as copied.
+5cd764bfdcf2a0675dffcb178165b02fb2a23f542962342a5c61331a3941c52d  fingus_core_reader.py  core/fingus_core_reader.py  (main's file: a726689c338ada4a, after replacing the words in tools/sync_reader.py SCRUB)
+86d293e44698abbea9df21d60cd4cb4f9b2cb7888a7a46de7da1c8e1e6d7b72e  organizer_phone_rules.py  organizer/organizer_service.py (STATUS, WORDS, DAYS, Refused, now, local, shown, rule_of, occurrence, when)
+8d74926918f293c92c83653656755558088991c55a04de2aa4108693d0e1e53e  organizer_quickadd.py  organizer/organizer_quickadd.py  (main's file: 130556c0d4170d2d, after replacing the words in tools/sync_reader.py SCRUB)
+1086f9ade15f37cc7f5362cb5e305df82f648a2a225180004a0a7e0bde46febc  organizer_timeline.py  organizer/organizer_timeline.py  (main's file: 1086f9ade15f37cc, after replacing the words in tools/sync_reader.py SCRUB)
+3c8353450af20eaa90d4c90b2df5f8f08c05fff6663aeaf481ebef93778d2d52  phone_bridge.py  aero/ios/tools/phone_bridge.py

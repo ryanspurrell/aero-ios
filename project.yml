@@ -48,3 +48,49 @@ targets:
         NSPhotoLibraryAddUsageDescription: "Aero saves photos and videos you choose to your library."
         # Only standard HTTPS is used, so no export paperwork is asked for.
         ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        SWIFT_OBJC_BRIDGING_HEADER: Aero/Aero-Bridging-Header.h
+        # The build script below copies the Python standard library and the reader into the app after it is built.
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        ENABLE_BITCODE: "NO"
+    dependencies:
+      # CPython for iOS (PEP 730), fetched by tools/prepare_python.sh before the project is generated.
+      - framework: Python.xcframework
+        embed: true
+        codeSign: true
+    postbuildScripts:
+      - name: Install Python standard library, packages and the reader
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          : "${EXPANDED_CODE_SIGN_IDENTITY:=-}"
+          export EXPANDED_CODE_SIGN_IDENTITY
+          source "$PROJECT_DIR/Python.xcframework/build/utils.sh"
+          mkdir -p "$CODESIGNING_FOLDER_PATH/app_packages" "$CODESIGNING_FOLDER_PATH/reader"
+          rsync -a --delete --exclude '__pycache__' "$PROJECT_DIR/app_packages/" "$CODESIGNING_FOLDER_PATH/app_packages/"
+          rsync -a --delete --exclude '__pycache__' --exclude 'SOURCES.txt' --exclude 'stdlib_keep.txt' "$PROJECT_DIR/reader/" "$CODESIGNING_FOLDER_PATH/reader/"
+          install_python Python.xcframework app_packages
+          # keep only the standard library files the reader imports (reader/stdlib_keep.txt, measured by the build's simulator run)
+          python3 "$PROJECT_DIR/tools/trim_stdlib.py" "$CODESIGNING_FOLDER_PATH/python/lib/python3.13" "$PROJECT_DIR/reader/stdlib_keep.txt"
+    scheme:
+      testTargets:
+        - AeroTests
+
+  AeroTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: AeroTests
+        excludes:
+          - "Fixtures/**"
+      # the same invented record files the Python tests read, copied in by tools/stage_for_aero_ios.py
+      - path: AeroTests/Fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: Aero
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.example.aero.tests

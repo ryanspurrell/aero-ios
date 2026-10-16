@@ -1,0 +1,131 @@
+name: Phone store
+
+# Builds the app with its own Organizer and the embedded Python reader, runs the Swift tests in the iOS Simulator, then launches the app
+# there with invented data and no PC (launch arguments -aero-demo phone, -aero-demo-quickadd "<line>"), takes pictures of the day and of
+# quick add asking, and reports the app's size and the standard library files the reader imported.
+# Started by hand, or by a push to the branch phone-store.
+on:
+  workflow_dispatch:
+  push:
+    branches: [phone-store]
+
+env:
+  XCODE_PATH: /Applications/Xcode_26.2.app
+  BUNDLE_ID: com.example.aero
+
+jobs:
+  phone:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode and install XcodeGen
+        run: |
+          sudo xcode-select -s "$XCODE_PATH"
+          brew install xcodegen
+      - name: Check the reader folder is what SOURCES.txt says
+        run: |
+          python3 - <<'PY'
+          import hashlib, os, sys
+          bad = []
+          for line in open("reader/SOURCES.txt"):
+              if line.startswith("#") or not line.strip():
+                  continue
+              digest, name = line.split()[:2]
+              if hashlib.sha256(open(os.path.join("reader", name), "rb").read()).hexdigest() != digest:
+                  bad.append(name)
+          print("edited by hand:", bad or "none")
+          sys.exit(1 if bad else 0)
+          PY
+      - name: Fetch embeddable CPython for iOS and the pure-Python packages
+        run: sh tools/prepare_python.sh
+      - name: Generate the project
+        run: xcodegen generate
+      - name: Pick an iPhone simulator
+        run: |
+          set -eu
+          udid="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          for runtime, devices in json.load(sys.stdin)["devices"].items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith("iPhone") and "Pro" not in d["name"] and "Air" not in d["name"]:
+                          print(d["udid"]); raise SystemExit
+          ')"
+          test -n "$udid"
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+      - name: Swift tests in the simulator
+        run: |
+          set -o pipefail
+          mkdir -p out
+          xcodebuild test -project Aero.xcodeproj -scheme Aero -configuration Debug \
+            -sdk iphonesimulator -destination "id=$SIM_UDID" -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee out/xcodebuild-test.txt | tail -n 120
+      - name: Build Release for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild build -project Aero.xcodeproj -scheme Aero -configuration Release \
+            -sdk iphonesimulator -destination "id=$SIM_UDID" -derivedDataPath build-release \
+            CODE_SIGN_IDENTITY="-" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tail -n 60
+      - name: Run it with invented data and no PC, take pictures
+        run: |
+          set -eu
+          mkdir -p out/pics
+          xcrun simctl boot "$SIM_UDID"
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          app="$(find build-release/Build/Products -name 'Aero.app' -maxdepth 3 | head -n 1)"
+          echo "APP=$app" >> "$GITHUB_ENV"
+          xcrun simctl install "$SIM_UDID" "$app"
+          data="$(xcrun simctl get_app_container "$SIM_UDID" "$BUNDLE_ID" data)"
+          wait_for() { n=0; while [ ! -e "$1" ] && [ $n -lt 90 ]; do sleep 1; n=$((n+1)); done; sleep 4; }
+          # 1. the day, from the phone's own records
+          rm -f "$data/Documents/demo-day.json"
+          xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone
+          wait_for "$data/Documents/demo-day.json"
+          xcrun simctl io "$SIM_UDID" screenshot out/pics/day.png
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
+          # 2. a line the reader is not sure of: quick add asks
+          rm -f "$data/Documents/demo-quickadd.json"
+          xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone -aero-demo-quickadd "call Sam at 9"
+          wait_for "$data/Documents/demo-quickadd.json"
+          xcrun simctl io "$SIM_UDID" screenshot out/pics/quickadd-asking.png
+          cp "$data/Documents/demo-quickadd.json" out/quickadd-asking.json
+          cp "$data/Documents/demo-day.json" out/day.json
+          cp "$data/Documents/demo-modules.txt" out/modules-asking.txt || true
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
+          # 3. a line the reader is sure of: it becomes a record, nothing is asked; the day shows it
+          rm -f "$data/Documents/demo-quickadd.json"
+          xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone -aero-demo-quickadd "water the plants tonight at 9"
+          wait_for "$data/Documents/demo-quickadd.json"
+          xcrun simctl io "$SIM_UDID" screenshot out/pics/quickadd-sure.png
+          cp "$data/Documents/demo-quickadd.json" out/quickadd-sure.json
+          cp "$data/Documents/demo-modules.txt" out/demo-modules.txt || true
+          xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
+      - name: Report the app's size and what the reader imported
+        run: |
+          {
+            echo "## Phone store"
+            echo '```'
+            app="$APP"
+            mb() { du -sk "$1" 2>/dev/null | awk '{printf "%.1f", $1/1024}'; }
+            whole=$(mb "$app")
+            py=$(mb "$app/Frameworks/Python.framework"); lib=$(mb "$app/python"); pkgs=$(mb "$app/app_packages"); rd=$(mb "$app/reader")
+            echo "Release, simulator, arm64 only; MB"
+            echo "whole app:            $whole"
+            echo "Python.framework:     $py"
+            echo "stdlib (python/):     $lib"
+            echo "app_packages:         $pkgs"
+            echo "reader folder:        $rd"
+            echo "app without Python (whole minus the four above): $(echo "$whole $py $lib $pkgs $rd" | awk '{printf "%.1f", $1-$2-$3-$4-$5}')"
+            echo "stdlib .py files in the app: $(find "$app/python" -name '*.py' | wc -l | tr -d ' ')"
+            echo "stdlib .py files imported:   $(wc -l < out/demo-modules.txt | tr -d ' ')"
+            echo '```'
+            echo; echo "Quick add, asking:"; echo '```'; cat out/quickadd-asking.json; echo '```'
+            echo; echo "Quick add, sure:"; echo '```'; cat out/quickadd-sure.json; echo '```'
+            echo; echo "Day:"; echo '```'; cat out/day.json; echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY" out/measurements.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phone-store
+          path: out/**

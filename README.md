@@ -69,20 +69,6 @@ What could go wrong:
   type other than `linkActivated` is expected from its documented behaviour
   but is not tried here (see the unverified list).
 
-## Native screens (started)
-
-`Aero/Native/` holds the first native SwiftUI screens, drawn from data the
-server already sends, with no web view: the front (Carry on, Tonight, Chats,
-a large Talk button), Organizer's quick add (one grouped form) and the chat
-list. They use standard controls (List, Form, DatePicker, DisclosureGroup)
-and system text styles, so VoiceOver, Dynamic Type and Switch Control apply.
-They are not the normal launch yet: that needs a sign-in step to get a device
-token. Launch with `-aero-screen front|quickadd|chats` to draw them from
-invented samples (`Fixtures.swift`); the workflow's `screenshots` job does
-this in the simulator and keeps the pictures. Not drawn yet: the face, voice
-(the Talk button does nothing), a chat's title and newest line (opened on the
-device from sealed messages), Aero's own look (`/look.json`).
-
 ## Building with no Mac
 
 The Xcode project is not stored; `project.yml` describes it and
@@ -218,3 +204,12 @@ The Swift was written on Linux and has never been compiled. Unverified:
 - That the Xcode 26.2 path exists on the runner when the job is run.
 - The Apple documentation pages for Swift API signatures render by script and
   were not read in full; names were checked against WebKit's public headers.
+
+## Native screens (`Aero/Native/`, 2026-10-15, branch `organizer-timeline`; not compiled)
+
+The app opens on a native home (`OrganizerHomeScreen`), organizer first; it opens the day (`OrganizerDayScreen`: timeline or as simple
+as it can be, with week, month and year by zoom, pinch and tabs). Both draw one answer, Organizer's `calendar`
+(`organizer_timeline.py`), asked through Aero's server the way the page asks (`OrganizerAPI`, the web view's sign-in cookie copied into
+URLSession). A colour is Organizer's (a name or hex), looked up as a theme token named `Organizer/<name>` in the asset catalog, never
+chosen in code; those tokens are not in the catalog yet. Anything not drawn natively opens in the web view. No Mac was at hand: nothing here
+was compiled, so the first workflow run may need small fixes.

@@ -2,4 +2,7 @@
 Aero/Info.plist
 build/
 *.p8
-shots/
+Python.xcframework/
+app_packages/
+py-support.tar.gz
+out/
