@@ -1,0 +1,48 @@
+# XcodeGen spec for ReaderTry: a measured try that runs the quick-add reader (Python, Lark's Earley parser) inside an iPhone app in the
+# simulator. A separate project from the Aero app; nothing in project.yml or the Aero target is changed.
+#   xcodegen generate --spec readertry.yml     (after the workflow's "prepare" steps put Python.xcframework and app_packages here)
+name: ReaderTry
+
+options:
+  deploymentTarget:
+    iOS: "16.4"
+
+settings:
+  base:
+    PRODUCT_NAME: ReaderTry
+    PRODUCT_BUNDLE_IDENTIFIER: com.example.readertry
+    TARGETED_DEVICE_FAMILY: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+    ENABLE_BITCODE: "NO"
+
+targets:
+  ReaderTry:
+    type: application
+    platform: iOS
+    sources:
+      - path: ReaderTry
+    info:
+      path: ReaderTry/Info.plist
+      properties:
+        CFBundleDisplayName: ReaderTry
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    dependencies:
+      - framework: Python.xcframework
+        embed: true
+        codeSign: true
+    postCompileScripts: []
+    postbuildScripts:
+      - name: Install Python standard library, packages and the reader
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          : "${EXPANDED_CODE_SIGN_IDENTITY:=-}"
+          export EXPANDED_CODE_SIGN_IDENTITY
+          source "$PROJECT_DIR/Python.xcframework/build/utils.sh"
+          mkdir -p "$CODESIGNING_FOLDER_PATH/app_packages" "$CODESIGNING_FOLDER_PATH/reader"
+          rsync -a --delete --exclude '__pycache__' "$PROJECT_DIR/app_packages/" "$CODESIGNING_FOLDER_PATH/app_packages/"
+          rsync -a --delete --exclude '__pycache__' --exclude 'expected.json*' "$PROJECT_DIR/reader/" "$CODESIGNING_FOLDER_PATH/reader/"
+          install_python Python.xcframework app_packages

@@ -1,0 +1,110 @@
+name: Reader try
+
+# A measured try, not the app: does the quick-add reader (Python, Lark's Earley parser) run unchanged inside an iPhone app?
+# Started by hand, or by a push to the branch reader-try.
+on:
+  workflow_dispatch:
+  push:
+    branches: [reader-try]
+
+env:
+  XCODE_PATH: /Applications/Xcode_26.2.app
+  # BeeWare's Python-Apple-support: CPython built for iOS (PEP 730), as an XCframework.
+  PY_SUPPORT_URL: https://github.com/beeware/Python-Apple-support/releases/download/3.13-b16/Python-3.13-iOS-support.b16.tar.gz
+
+jobs:
+  reader:
+    runs-on: macos-15
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode and install XcodeGen
+        run: |
+          sudo xcode-select -s "$XCODE_PATH"
+          brew install xcodegen
+      - name: Fetch embeddable CPython for iOS
+        run: |
+          curl -fL -o py-support.tar.gz "$PY_SUPPORT_URL"
+          shasum -a 256 py-support.tar.gz
+          tar xzf py-support.tar.gz Python.xcframework
+          cat VERSIONS 2>/dev/null || true
+      - name: Install lark and dateutil (pure Python) into app_packages
+        run: |
+          python3 -m pip install --quiet --target app_packages --only-binary=:all: lark==1.3.1 python-dateutil==2.9.0.post0 six
+          find app_packages -name __pycache__ -type d -prune -exec rm -rf {} +
+          find app_packages -name '*.so' | head
+      - name: Generate the project
+        run: xcodegen generate --spec readertry.yml
+      - name: Pick an iPhone simulator
+        run: |
+          set -eu
+          udid="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          for runtime, devices in json.load(sys.stdin)["devices"].items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith("iPhone") and "Pro" not in d["name"] and "Air" not in d["name"]:
+                          print(d["udid"]); raise SystemExit
+          ')"
+          test -n "$udid"
+          echo "SIM_UDID=$udid" >> "$GITHUB_ENV"
+      - name: Build ReaderTry for the simulator
+        run: |
+          set -o pipefail
+          xcodebuild build -project ReaderTry.xcodeproj -scheme ReaderTry -configuration Release \
+            -sdk iphonesimulator -destination "id=$SIM_UDID" -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" ARCHS=arm64 ONLY_ACTIVE_ARCH=YES 2>&1 | tail -n 80
+      - name: Run it in the simulator
+        run: |
+          set -eu
+          mkdir -p out
+          xcrun simctl boot "$SIM_UDID"
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          app="$(find build/Build/Products -name 'ReaderTry.app' -maxdepth 3 | head -n 1)"
+          echo "APP=$app" >> "$GITHUB_ENV"
+          xcrun simctl install "$SIM_UDID" "$app"
+          xcrun simctl launch --console "$SIM_UDID" com.example.readertry 2>&1 | tee out/console.txt || true
+          data="$(xcrun simctl get_app_container "$SIM_UDID" com.example.readertry data)"
+          cp "$data/Documents/"* out/ || true
+          ls -la out
+      - name: Compare with the PC's answer and report measurements
+        run: |
+          set -eu
+          cp reader/expected.json out/expected.json
+          rc=0
+          python3 reader/compare.py reader/expected.json out/readings.json out/comparison.json || rc=$?
+          {
+            echo "## Reader try"
+            python3 - <<'PY'
+          import json
+          c = json.load(open("out/comparison.json"))
+          print("Readings matching the PC: %d of %d" % (c["matched"], c["lines"]))
+          i = json.load(open("out/init.json"))
+          t = json.load(open("out/readings.json.timing.json"))
+          print("")
+          print("Python %s in the simulator" % t["python"])
+          print("Cold start to first reading: %.0f ms (start Python %.0f ms + import %.0f ms + first line %.0f ms)" % (
+              (i["python_init_s"] + t["import_s"] + t["first_reading_s"]) * 1000, i["python_init_s"] * 1000, t["import_s"] * 1000, t["first_reading_s"] * 1000))
+          print("Average per line, first pass over 250 (includes building the grammar once): %.1f ms" % (t["pass1_avg_s"] * 1000))
+          print("Average per line, second pass (warm): %.2f ms" % (t["pass2_avg_s"] * 1000))
+          print("Stdlib .py files the reader loads: %d, %.2f MB" % (t["stdlib_py_files_used"], t["stdlib_py_bytes_used"] / 1e6))
+          PY
+            echo ""
+            echo "Added app size (Release, simulator, arm64 only; MB):"
+            echo '```'
+            app="$APP"
+            mb() { du -sk "$1" | awk '{printf "%.1f", $1/1024}'; }
+            echo "whole app:            $(mb "$app")"
+            echo "Python.framework:     $(mb "$app/Frameworks/Python.framework")"
+            echo "stdlib (python/):     $(mb "$app/python")"
+            echo "stdlib frameworks:    $(du -sk "$app/Frameworks" | awk '{printf "%.1f", $1/1024}') (all of Frameworks/, includes Python.framework)"
+            echo "app_packages:         $(mb "$app/app_packages")"
+            echo "reader + lines:       $(mb "$app/reader")"
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY" out/measurements.md
+          exit $rc
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reader-try
+          path: out/*
