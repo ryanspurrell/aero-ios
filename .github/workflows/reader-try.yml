@@ -75,7 +75,7 @@ jobs:
           python3 reader/compare.py reader/expected.json out/readings.json out/comparison.json || rc=$?
           {
             echo "## Reader try"
-            python3 - <<'PY' || { echo 'summary failed'; rc=1; }
+            python3 - <<'PY' || { echo 'summary failed'; touch out/summary-failed; }
           import json
           c = json.load(open("out/comparison.json"))
           print("Readings matching the PC: %d of %d" % (c["matched"], c["lines"]))
@@ -102,6 +102,7 @@ jobs:
             echo "reader + lines:       $(mb "$app/reader")"
             echo '```'
           } | tee -a "$GITHUB_STEP_SUMMARY" out/measurements.md
+          test ! -e out/summary-failed
           exit $rc
       - uses: actions/upload-artifact@v4
         if: always()

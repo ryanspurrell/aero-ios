@@ -61,4 +61,10 @@ def main(out):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    try:
+        main(sys.argv[1])
+    except BaseException:
+        import traceback
+        with open(sys.argv[1] + ".error.txt", "w") as f:
+            traceback.print_exc(file=f)
+        raise
