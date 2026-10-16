@@ -95,3 +95,13 @@ enum DemoMode {
         }
     }
 }
+
+/// In the demo run only: a notification centre that keeps what it is given in memory, so the simulator's permission box does not cover the
+/// pictures. The real one (SystemNotifications) is used otherwise.
+final class DemoNotifications: NotificationScheduling {
+    private var pending: [String: DateComponents] = [:]
+    func requestAuthorization() async -> Bool { true }
+    func pendingIdentifiers() async -> [String] { Array(pending.keys) }
+    func remove(_ identifiers: [String]) { for i in identifiers { pending[i] = nil } }
+    func schedule(identifier: String, title: String, at: DateComponents) async throws { pending[identifier] = at }
+}

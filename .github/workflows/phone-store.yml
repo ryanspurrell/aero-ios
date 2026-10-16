@@ -76,30 +76,32 @@ jobs:
           app="$(find build-release/Build/Products -name 'Aero.app' -maxdepth 3 | head -n 1)"
           echo "APP=$app" >> "$GITHUB_ENV"
           xcrun simctl install "$SIM_UDID" "$app"
-          data="$(xcrun simctl get_app_container "$SIM_UDID" "$BUNDLE_ID" data)"
-          wait_for() { n=0; while [ ! -e "$1" ] && [ $n -lt 90 ]; do sleep 1; n=$((n+1)); done; sleep 4; }
+          # the data folder is made at the first launch, so it is looked up each time, after a launch
+          docs() { echo "$(xcrun simctl get_app_container "$SIM_UDID" "$BUNDLE_ID" data)/Documents"; }
+          xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone >/dev/null && sleep 5 && xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
+          wait_for() { n=0; while [ ! -e "$(docs)/$1" ] && [ $n -lt 60 ]; do sleep 1; n=$((n+1)); done; sleep 4; }
           # 1. the day, from the phone's own records
-          rm -f "$data/Documents/demo-day.json"
+          rm -f "$(docs)/demo-day.json"
           xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone
-          wait_for "$data/Documents/demo-day.json"
+          wait_for demo-day.json
           xcrun simctl io "$SIM_UDID" screenshot out/pics/day.png
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
           # 2. a line the reader is not sure of: quick add asks
-          rm -f "$data/Documents/demo-quickadd.json"
+          rm -f "$(docs)/demo-quickadd.json"
           xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone -aero-demo-quickadd "call Sam at 9"
-          wait_for "$data/Documents/demo-quickadd.json"
+          wait_for demo-quickadd.json
           xcrun simctl io "$SIM_UDID" screenshot out/pics/quickadd-asking.png
-          cp "$data/Documents/demo-quickadd.json" out/quickadd-asking.json
-          cp "$data/Documents/demo-day.json" out/day.json
-          cp "$data/Documents/demo-modules.txt" out/modules-asking.txt || true
+          cp "$(docs)/demo-quickadd.json" out/quickadd-asking.json
+          cp "$(docs)/demo-day.json" out/day.json
+          cp "$(docs)/demo-modules.txt" out/modules-asking.txt || true
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
           # 3. a line the reader is sure of: it becomes a record, nothing is asked; the day shows it
-          rm -f "$data/Documents/demo-quickadd.json"
+          rm -f "$(docs)/demo-quickadd.json"
           xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone -aero-demo-quickadd "water the plants tonight at 9"
-          wait_for "$data/Documents/demo-quickadd.json"
+          wait_for demo-quickadd.json
           xcrun simctl io "$SIM_UDID" screenshot out/pics/quickadd-sure.png
-          cp "$data/Documents/demo-quickadd.json" out/quickadd-sure.json
-          cp "$data/Documents/demo-modules.txt" out/demo-modules.txt || true
+          cp "$(docs)/demo-quickadd.json" out/quickadd-sure.json
+          cp "$(docs)/demo-modules.txt" out/demo-modules.txt || true
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
       - name: Report the app's size and what the reader imported
         run: |

@@ -37,7 +37,7 @@ final class PhoneOrganizer: OrganizerBackend {
         let path = folder.appendingPathComponent(name).path
         if DemoMode.isOn { try? FileManager.default.removeItem(atPath: path) }
         let store = (try? PhoneStore(path: path)) ?? (try! PhoneStore(path: nil))
-        return PhoneOrganizer(store: store, reader: EmbeddedReader.shared, reminders: PhoneReminders(center: SystemNotifications()))
+        return PhoneOrganizer(store: store, reader: EmbeddedReader.shared, reminders: PhoneReminders(center: DemoMode.isOn ? DemoNotifications() : SystemNotifications()))
     }
 
     // MARK: the clock, as the Python side wants it
@@ -129,7 +129,7 @@ final class PhoneOrganizer: OrganizerBackend {
         rec["changed"] = .string(shown(clock()))
         rec["basis"] = .object(["status": .string("said"), "by": .string(Self.person)])
         try store.put(oid: oid, rec: rec, by: Self.person, why: why, replaces: before.id)
-        await refreshReminders()
+        refreshRemindersInBackground()
     }
 
     /// A line quick add was not sure of is answered when the person sets its time: choosing one of the kept readings is an `update`
@@ -170,7 +170,7 @@ final class PhoneOrganizer: OrganizerBackend {
             try store.put(oid: oid, rec: rec, by: Self.person, why: "added", replaces: nil)
             made.append((oid, rec))
         }
-        await refreshReminders()
+        refreshRemindersInBackground()
         guard let (oid, rec) = made.first else { return QuickAddOutcome(title: first["title"]?.stringValue ?? line, typed: line, question: nil, likeliest: nil) }
         return QuickAddOutcome(title: rec["title"]?.stringValue ?? line, typed: line, question: Self.question(oid: oid, rec: rec), likeliest: Self.likeliest(rec))
     }
@@ -208,10 +208,16 @@ final class PhoneOrganizer: OrganizerBackend {
         rec["attention"] = .string("now")
         rec["changed"] = .string(shown(clock()))
         try store.put(oid: oid, rec: rec, by: Self.person, why: "kept as typed", replaces: before.id)
-        await refreshReminders()
+        refreshRemindersInBackground()
     }
 
     // MARK: reminders
+
+    /// Reminders are set after a change without making the change wait: the first time, the system asks for permission, and a person's
+    /// answer to that must not hold up adding a task.
+    func refreshRemindersInBackground() {
+        Task { await refreshReminders() }
+    }
 
     /// Schedule the nearest times something should be told (PhoneReminders keeps them within iOS's pending limit).
     func refreshReminders() async {
