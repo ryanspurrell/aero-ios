@@ -163,9 +163,10 @@ def upcoming(a):
 def loaded(_a):
     """The standard library's .py files imported so far, relative to its folder, sorted: what the app's bundle has to keep (the build
     trims the rest, measured from this list)."""
+    import json
     import os
     import sys
-    root = os.path.dirname(os.path.abspath(os.__file__))
+    root = os.path.dirname(os.path.dirname(os.path.abspath(json.__file__)))      # os is frozen in 3.13 and may have no __file__; json is not
     return sorted(os.path.relpath(m.__file__, root) for m in list(sys.modules.values())
                   if str(getattr(m, "__file__", "") or "").endswith(".py") and os.path.abspath(m.__file__).startswith(root + os.sep)
                   and "site-packages" not in m.__file__ and "app_packages" not in m.__file__)
