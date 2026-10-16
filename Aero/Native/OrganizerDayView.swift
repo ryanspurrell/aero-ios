@@ -346,7 +346,7 @@ struct MonthView: View {
                             Text("\(c.day)").fx(Look.Size.cell, style: .footnote).padding(6)
                                 .foregroundStyle(c.inMonth ? Look.Palette.fg : Look.Palette.dim)
                             HStack(spacing: Look.Space.hair) {
-                                ForEach(c.pills.prefix(4)) { PointerView(pointer: Pointer($0), size: .dot) }
+                                ForEach(c.pills.prefix(3)) { PointerView(pointer: Pointer($0), size: .dot) }
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.leading, 6).padding(.bottom, 7)
                             if c.question { Text("?").fx(Look.Size.cell, style: .footnote).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(6) }
