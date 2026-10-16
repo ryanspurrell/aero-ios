@@ -213,3 +213,17 @@ as it can be, with week, month and year by zoom, pinch and tabs). Both draw one 
 URLSession). A colour is Organizer's (a name or hex), looked up as a theme token named `Organizer/<name>` in the asset catalog, never
 chosen in code; those tokens are not in the catalog yet. Anything not drawn natively opens in the web view. No Mac was at hand: nothing here
 was compiled, so the first workflow run may need small fixes.
+
+## The phone's own Organizer (no PC), 2026-10-15/16
+
+Design: `projects/aero/design__ios_without_a_pc_2026-10-15.md`, steps 1 to 4. With no server address the app keeps Organizer's records
+itself (`PhoneStore`, SQLite, the PC's record shape in `projects/organizer/record_shape.schema.json`), reads a typed line with the PC's own
+Python reader embedded in the app (CPython for iOS, `reader/`), arranges the day with the PC's own `organizer_timeline.py`, and schedules
+reminders itself (`PhoneReminders`, the nearest 64: Apple Developer Forums thread 811171). Screens ask an `OrganizerBackend` and do not know
+which they have.
+
+- `tools/sync_reader.py DEST` copies main's reader files (only "the owner" is replaced in comments) and extracts the service's date helpers.
+- `tools/stage_for_aero_ios.py DEST` lays out exactly the files for the public repository and searches them for private items. Run it, then
+  commit and push what it wrote. A change on main reaches the app by running it.
+- `tools/test_phone_bridge.py` tests the bridge on the PC; `AeroTests/` runs on the simulator (the public repo's `phone-store.yml` workflow).
+- `stdlib_keep.txt` is the measured list of standard library files the reader imports (the workflow's run writes it as demo-modules.txt).
