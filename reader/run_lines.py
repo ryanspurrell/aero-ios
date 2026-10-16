@@ -57,7 +57,7 @@ def main(out):
     with open(out + ".timing.json", "w") as f:
         json.dump({"python": sys.version.split()[0], "lines": n, "import_s": T_IMPORT, "first_reading_s": first,
                    "pass1_total_s": t_pass1, "pass1_avg_s": t_pass1 / n, "pass2_avg_s": t_pass2 / n,
-                   "stdlib_py_files_used": len(stdlib_py), "stdlib_py_bytes_used": sum(os.path.getsize(x) for x in stdlib_py)}, f, indent=1)
+                   "stdlib_py_files_used": len(stdlib_py), "stdlib_py_bytes_used": sum(os.path.getsize(x) for x in stdlib_py if os.path.exists(x))}, f, indent=1)
 
 
 if __name__ == "__main__":

@@ -69,13 +69,13 @@ jobs:
           ls -la out
       - name: Compare with the PC's answer and report measurements
         run: |
-          set -eu
+          set -euo pipefail
           cp reader/expected.json out/expected.json
           rc=0
           python3 reader/compare.py reader/expected.json out/readings.json out/comparison.json || rc=$?
           {
             echo "## Reader try"
-            python3 - <<'PY'
+            python3 - <<'PY' || { echo 'summary failed'; rc=1; }
           import json
           c = json.load(open("out/comparison.json"))
           print("Readings matching the PC: %d of %d" % (c["matched"], c["lines"]))
