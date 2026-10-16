@@ -52,7 +52,7 @@ def main(out):
     n = len(lines)
     stdlib_py = sorted({os.path.abspath(m.__file__) for m in list(sys.modules.values())
                         if getattr(m, "__file__", None) and str(m.__file__).endswith(".py")
-                        and os.path.dirname(os.path.dirname(os.path.abspath(sys.modules["os"].__file__))) in os.path.abspath(m.__file__)
+                        and os.path.dirname(os.path.dirname(os.path.abspath(sys.modules["json"].__file__))) in os.path.abspath(m.__file__)
                         and "site-packages" not in m.__file__ and "app_packages" not in m.__file__})
     with open(out + ".timing.json", "w") as f:
         json.dump({"python": sys.version.split()[0], "lines": n, "import_s": T_IMPORT, "first_reading_s": first,
