@@ -10,7 +10,7 @@ enum ReaderFailure: LocalizedError {
     case said(String)
     var errorDescription: String? {
         switch self {
-        case .said(let words): return "The phone could not read that: \(words)"
+        case .said: return "Could not read that. Try again."
         }
     }
 }

@@ -9,8 +9,8 @@ final class PhoneOrganizer: OrganizerBackend {
         case notOnPhone(String), noSuchItem
         var errorDescription: String? {
             switch self {
-            case .notOnPhone(let what): return "\(what) is not on the phone yet."
-            case .noSuchItem: return "That item is not here any more."
+            case .notOnPhone: return "Not on this phone yet."
+            case .noSuchItem: return "Item not found."
             }
         }
     }
@@ -187,7 +187,7 @@ final class PhoneOrganizer: OrganizerBackend {
             choices.append(QuestionChoice(index: i, label: o["label"]?.stringValue ?? "", answer: Change(name: "update", args: answer)))
         }
         guard !choices.isEmpty else { return nil }
-        return Question(id: String(oid.prefix(8)), ask: rd["ask"]?.stringValue ?? "", capture: rec["capture"]?.stringValue ?? rec["title"]?.stringValue ?? "", choices: choices)
+        return Question(id: String(oid.prefix(8)), ask: rd["ask"]?.stringValue ?? "", capture: rec["capture"]?.stringValue ?? rec["title"]?.stringValue ?? "", title: rec["title"]?.stringValue, choices: choices)
     }
 
     /// "Likeliest" is said only where one reading really is likelier than the next; the numbers are guesses until her answers teach them.

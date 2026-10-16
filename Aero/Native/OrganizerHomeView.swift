@@ -1,122 +1,150 @@
 import SwiftUI
 
-/// The app's first screen, organizer first (the approved mock projects/aero/mockups/ios_home_organizer_first_2026-10-15.html): the day is
-/// most of the screen. Next is big and the rest of today hangs on one time line with its times at the left, so they read as one day; a
-/// waiting question sits in place with one-tap choices (recorded where tapped; the others stay tappable to change it); a calm line when
-/// nothing else is left; "Task, reminder, note, or ask…" is always at the bottom. Any of it opens the day timeline, which zooms out to
-/// week, month and year.
+/// The app's first screen, organizer first (the approved mock projects/aero/mockups/ios_home_organizer_first_2026-10-15.html): the date line at
+/// the top left; the day as one time spine with Next big in its place and each other thing its own block at its own time; a waiting question
+/// answered in place with chips; one Carry on card and the small Chats, Recordings and Assistant keys only when they have something or are set
+/// up; and the box pinned at the bottom with its mic key. Any of the day opens the day timeline, which zooms out to week, month and year.
 ///
-/// The data is the day's (`calendar`, span day): Organizer's tasks and Colony's events, each its owner's. The board's other pointers
-/// (one Carry on card with its three kinds kept apart, and small Chats / Recordings / Assistant keys shown only when they have something
-/// or are set up) belong to other apps and are not drawn here yet: they wait for the shared pieces (branch one-look), and the home stays
-/// complete without them, as the mock's quiet version is. No Assistant key at all while none is set up.
-///
-/// What each pointer sends is kind, ranked data, actions, answer state, colour and icon, never size or style; this view fits it to the
-/// slot and to Dynamic Type (ViewThatFits), falling back from the time line to a plain stack when the text is large.
+/// The data is the day's (`calendar`, span day): Organizer's tasks (the phone's own, or the PC's) and Colony's events, each its owner's. Carry
+/// on and the three keys belong to other apps and have no source in the app yet (they wait for the shared pieces), so with no source they are
+/// not drawn: nothing here makes up a card.
 struct OrganizerHomeScreen: View {
     @StateObject private var store = OrganizerDayStore()
     var openDay: () -> Void = {}
     var open: (OpenRef) -> Void = { _ in }
-    @Environment(\.dynamicTypeSize) private var typeSize
+    /// What the header's menu offers beside the calendar: a row to set up a PC, or to open the rest of Aero.
+    var menuTitle = "More"
+    var menuAction: () -> Void = {}
+    @State private var scrolled = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    if let day = store.answer?.day {
-                        Text(day.dateText).font(.subheadline).bold().foregroundStyle(.secondary)
-                        // Next and the rest hang on one time line; at accessibility sizes the times would not fit at the left, so the
-                        // same things are stacked with their times inside
-                        if typeSize.isAccessibilitySize { stacked(day) } else { spine(day) }
-                        if let q = (day.rows + day.anytime).compactMap({ $0.question }).first {
-                            QuestionCard(question: q, store: store, large: false)
-                        }
-                    } else if let failure = store.failure {
-                        Text(failure).font(.callout).foregroundStyle(.secondary)
-                    } else {
-                        ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+        ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
+                header
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: Look.Space.snug) { content }
+                            .padding(.horizontal, Look.Space.gutter)
+                            .padding(.top, 4)
+                            .padding(.bottom, 120)
                     }
+                    .onChange(of: store.answer?.date) { _ in scrollToNext(proxy) }
+                    .task { await store.load(); scrollToNext(proxy) }
                 }
-                .padding(.horizontal)
             }
             NewBox(assistantSetUp: false, onAdded: { Task { await store.load() } })
+                .padding(.horizontal, Look.Space.gutter)
+                .padding(.bottom, 8)
         }
-        .task { await store.load() }
+        .fingusGround()
+        .toolbar(.hidden, for: .navigationBar)
     }
 
-    private func rest(_ day: DayAnswer) -> [DayItem] {
-        let next = day.simple.next?.id
-        let timed = day.rows.filter { $0.kind == "item" && $0.state != "done" && $0.late != true && $0.id != next }
-        return timed + day.anytime.filter { $0.state != "done" }
+    private func scrollToNext(_ proxy: ScrollViewProxy) {
+        guard let day = store.answer?.day, let id = day.simple.next?.id, let row = day.rows.first(where: { $0.id == id }) else { return }
+        withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
-    private func spine(_ day: DayAnswer) -> some View {
-        let more = rest(day)
-        return VStack(alignment: .leading, spacing: 10) {
-            if let n = day.simple.next {
-                HStack(alignment: .top, spacing: 8) {
-                    timeAndKnot(n.timeText ?? "")
-                    nextCard(n)
+    // MARK: header: the date line, and a quiet menu
+
+    private var header: some View {
+        HStack(alignment: .center) {
+            Text(store.answer?.day?.dateText ?? " ").fx(Look.Size.date, style: .subheadline).foregroundStyle(Look.Palette.soft)
+            Spacer()
+            Menu {
+                Button { openDay() } label: { Label("Calendar", systemImage: "calendar") }
+                Button { menuAction() } label: { Label(menuTitle, systemImage: store.backendKind == .phone ? "desktopcomputer" : "ellipsis") }
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Look.Palette.soft)
+                    .frame(width: Look.Space.sizeTap, height: Look.Space.sizeTap)
+            }
+            .accessibilityLabel("Menu")
+        }
+        .padding(.horizontal, Look.Space.gutter)
+        .padding(.top, 6)
+    }
+
+    // MARK: content
+
+    @ViewBuilder private var content: some View {
+        if let day = store.answer?.day {
+            DayRows(day: day, metrics: .home, bigNext: true, inlineQuestions: false, store: store, open: { _ in openDay() })
+            if day.simple.later.isEmpty && day.anytime.isEmpty && day.simple.next != nil {
+                Text("Nothing else today.").fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity).padding(.vertical, 6)
+            }
+            if let q = (day.rows + day.anytime).compactMap({ $0.question }).first {
+                QuestionInPlace(question: q, store: store)
+            }
+            let extras = HomeExtrasSource.current()
+            if let carry = extras.carryOn { CarryOnCard(title: carry) }
+            if !extras.keys.isEmpty { ExtrasRow(keys: extras.keys) }
+        } else if let failure = store.failure {
+            Text(failure).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
+        } else {
+            ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+        }
+    }
+}
+
+// MARK: Carry on and the small keys
+
+/// What the home shows beyond the day: one Carry on card and the small keys. Empty until the app has a source for them.
+struct HomeExtras {
+    struct Key: Identifiable { var id: String; var letter: String; var name: String; var hue: String; var dot = false }
+    var carryOn: String?
+    var keys: [Key] = []
+}
+
+enum HomeExtrasSource {
+    static func current() -> HomeExtras {
+        DemoMode.showExtras
+            ? HomeExtras(carryOn: "Planning Saturday", keys: [.init(id: "chats", letter: "C", name: "Chats", hue: "green", dot: true),
+                                                              .init(id: "rec", letter: "R", name: "Recordings", hue: "accent"),
+                                                              .init(id: "ai", letter: "A", name: "Assistant", hue: "purple")])
+            : HomeExtras()
+    }
+}
+
+struct CarryOnCard: View {
+    let title: String
+    var body: some View {
+        HStack(spacing: Look.Space.snug) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("CARRY ON").fx(Look.Size.carryLabel, style: .caption1).foregroundStyle(Look.Palette.label)
+                Text(title).fx(Look.Size.carryTitle, style: .body).foregroundStyle(Look.Palette.ink)
+            }
+            Spacer()
+            Text("›").font(.system(size: 22)).foregroundStyle(Look.Palette.label)
+        }
+        .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.inset)
+        .background {
+            let c = Fingus.hue("green")
+            RoundedRectangle(cornerRadius: Look.Bubble.radiusCard, style: .continuous)
+                .fill(LinearGradient(colors: [c.light, c.base], startPoint: UnitPoint(x: 0.33, y: 0.03), endPoint: UnitPoint(x: 0.67, y: 0.97)))
+                .shadow(color: Look.Palette.shadow.opacity(Look.Bubble.shadowCard.alpha), radius: Look.Bubble.shadowCard.blur / 2, x: 0, y: Look.Bubble.shadowCard.y)
+        }
+        .padding(.top, 2)
+    }
+}
+
+struct ExtrasRow: View {
+    let keys: [HomeExtras.Key]
+    var body: some View {
+        HStack(spacing: Look.Space.snug) {
+            ForEach(keys) { k in
+                HStack(spacing: Look.Space.tight) {
+                    Text(k.letter).fx(TypeToken(size: 13, weight: 800), style: .caption1).foregroundStyle(Look.Palette.ink)
+                        .frame(width: 26, height: 26)
+                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(LinearGradient(colors: [Fingus.hue(k.hue).light, Fingus.hue(k.hue).base], startPoint: .topLeading, endPoint: .bottomTrailing)))
+                    Text(k.name).fx(Look.Size.extra, style: .subheadline).foregroundStyle(Look.Palette.fg).lineLimit(1).minimumScaleFactor(0.8)
+                }
+                .frame(maxWidth: .infinity, minHeight: Look.Space.sizeInput + Look.Space.hair)
+                .fingusCard(radius: Look.Bubble.radiusExtra)
+                .overlay(alignment: .topTrailing) {
+                    if k.dot { Circle().fill(Look.Palette.now).frame(width: 12, height: 12).padding(.top, 8).padding(.trailing, 10) }
                 }
             }
-            if !more.isEmpty {
-                HStack(alignment: .top, spacing: 8) {
-                    timeAndKnot(more.first?.timeText ?? "")
-                    todayCard(more)
-                }
-            } else {
-                Text("Nothing else today.").font(.subheadline).foregroundStyle(.secondary).frame(maxWidth: .infinity)
-            }
         }
-    }
-
-    private func stacked(_ day: DayAnswer) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let n = day.simple.next { nextCard(n) }
-            todayCard(rest(day))
-        }
-    }
-
-    private func timeAndKnot(_ text: String) -> some View {
-        HStack(spacing: 4) {
-            Text(text).font(.footnote).bold().multilineTextAlignment(.trailing).frame(width: 56, alignment: .trailing)
-            Circle().fill(Color.accentColor).frame(width: 10, height: 10)
-        }
-        .padding(.top, 18)
-        .accessibilityHidden(true)
-    }
-
-    private func nextCard(_ n: SimpleNext) -> some View {
-        Button(action: openDay) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("NEXT").font(.caption).bold().foregroundStyle(.secondary)
-                Text(n.title).font(.title).bold()
-                Text(n.line.replacingOccurrences(of: #"^At [^,]+, "#, with: "", options: .regularExpression)).font(.subheadline)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .bubble(n.color, radius: 26, lift: 7)
-        }
-        .buttonStyle(BubblePressStyle())
-        .accessibilityLabel("Next: \(n.title), \(n.line). Opens your day.")
-    }
-
-    private func todayCard(_ items: [DayItem]) -> some View {
-        // each row its own B1 block: the symbol and the words inside it, no tile
-        VStack(spacing: 8) {
-            ForEach(items) { r in
-                Button(action: openDay) {
-                    HStack(spacing: 10) {
-                        Image(systemName: organizerSymbol(r.icon)).frame(width: 26)
-                        Text(r.title ?? "").font(.body).bold()
-                        Spacer(minLength: 0)
-                        if let t = r.timeText, !t.isEmpty { Text(t).font(.footnote) }
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 8).frame(minHeight: 44)
-                    .bubble(r.color, radius: 18, lift: 4)
-                }
-                .buttonStyle(BubblePressStyle())
-            }
-        }
+        .padding(.top, 2)
     }
 }

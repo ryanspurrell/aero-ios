@@ -171,7 +171,7 @@ final class PhoneOrganizerTests: XCTestCase {
 
     func testAThingNotOnThePhoneYetSaysSo() async throws {
         let phone = try make(FakeReader())
-        do { try await phone.send("defer", [:]); XCTFail("expected a refusal") } catch { XCTAssertTrue(error.localizedDescription.contains("not on the phone")) }
+        do { try await phone.send("defer", [:]); XCTFail("expected a refusal") } catch { XCTAssertTrue(error.localizedDescription.contains("phone")) }
     }
 }
 

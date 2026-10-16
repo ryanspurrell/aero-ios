@@ -44,6 +44,8 @@ struct Question: Codable, Hashable, Identifiable {
     var id: String
     var ask: String
     var capture: String
+    /// The item's own title, when the answer carries it (the phone's does); the PC's names only what was typed.
+    var title: String?
     var choices: [QuestionChoice]
 }
 

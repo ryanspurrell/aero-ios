@@ -18,7 +18,10 @@ final class OrganizerDayStore: ObservableObject {
     /// The PC when one is set up, otherwise the phone's own records; the views do not know which.
     init(backend: OrganizerBackend = OrganizerBackends.current()) {
         self.api = backend
+        if DemoMode.isOn, let s = DemoMode.screen { span = s }
     }
+
+    var backendKind: BackendKind { api.kind }
 
     func load() async {
         do {
@@ -27,7 +30,7 @@ final class OrganizerDayStore: ObservableObject {
             date = got.date
             failure = nil
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? "Organizer didn't answer."
+            failure = (error as? LocalizedError)?.errorDescription ?? "No answer. Try again."
         }
         if answer?.mode == .simple { helpers = await api.helperNames() }
     }

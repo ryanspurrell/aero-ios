@@ -42,6 +42,8 @@ targets:
           - UIInterfaceOrientationPortrait
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
+        UIAppFonts:
+          - exo2.ttf
         NSCameraUsageDescription: "Aero uses the camera for video calls and for photos you take in Aero."
         NSMicrophoneUsageDescription: "Aero uses the microphone for calls, voice messages and dictation."
         NSPhotoLibraryUsageDescription: "Aero lets you pick photos and videos from your library to send or save."

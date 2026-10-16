@@ -84,8 +84,15 @@ jobs:
           rm -f "$(docs)/demo-day.json"
           xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone
           wait_for demo-day.json
-          xcrun simctl io "$SIM_UDID" screenshot out/pics/day.png
+          xcrun simctl io "$SIM_UDID" screenshot out/pics/home.png
           xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true
+          shot() { name="$1"; shift; rm -f "$(docs)/demo-day.json"; xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone "$@" >/dev/null
+                   wait_for demo-day.json; xcrun simctl io "$SIM_UDID" screenshot "out/pics/$name.png"; xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true; }
+          shot day -aero-demo-screen day
+          shot week -aero-demo-screen week
+          shot month -aero-demo-screen month
+          shot year -aero-demo-screen year
+          shot home-extras -aero-demo-extras 1
           # 2. a line the reader is not sure of: quick add asks
           rm -f "$(docs)/demo-quickadd.json"
           xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone -aero-demo-quickadd "call Sam at 9"

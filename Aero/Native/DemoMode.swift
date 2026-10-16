@@ -8,6 +8,10 @@ import Foundation
 enum DemoMode {
     static var isOn: Bool { UserDefaults.standard.string(forKey: "aero-demo") == "phone" }
     static var quickAddLine: String? { UserDefaults.standard.string(forKey: "aero-demo-quickadd") }
+    /// -aero-demo-screen day|week|month|year: open the calendar on that view
+    static var screen: CalendarSpan? { UserDefaults.standard.string(forKey: "aero-demo-screen").flatMap { CalendarSpan(rawValue: $0) } }
+    /// -aero-demo-extras 1: draw Carry on and the small keys with invented content, to see the whole home of the mock
+    static var showExtras: Bool { isOn && UserDefaults.standard.bool(forKey: "aero-demo-extras") }
     private static var quickAddDone = false
 
     private static func documents() -> URL {
@@ -40,14 +44,26 @@ enum DemoMode {
         let soon = cal.date(byAdding: .minute, value: 90, to: now)!
         let soonText = String(format: "%04d-%02d-%02d %02d:%02d", cal.component(.year, from: soon), cal.component(.month, from: soon), cal.component(.day, from: soon),
                               cal.component(.hour, from: soon), cal.component(.minute, from: soon))
+        // two lists with their own colours, so the day shows more than one hue (a task takes its list's colour)
+        func list(_ title: String, _ color: String, _ icon: String) -> String {
+            let oid = PhoneStore.newID()
+            _ = try? phone.store.put(oid: oid, rec: ["type": .string("project"), "title": .string(title), "status": .string("active"), "color": .string(color), "icon": .string(icon),
+                                                      "locked": .bool(false), "changed": .string(at(0, 7))], by: PhoneOrganizer.person, why: "added", replaces: nil)
+            return oid
+        }
+        let errands = list("Errands", "green", "cart"), health = list("Health", "orange", "heart")
         let seeds: [([String: JSONValue], String)] = [
-            (task("Take pills", ["status": .string("done"), "remind": .string(at(0, 8)), "due": .string(at(0, 8)), "done_at": .string(at(0, 8, 5))]), "done"),
+            (task("Take pills", ["status": .string("done"), "remind": .string(at(0, 8)), "due": .string(at(0, 8)), "done_at": .string(at(0, 8, 5)), "project": .string(health)]), "done"),
             (task("Call the bank", ["due": .string(at(0, 10, 30)), "remind": .string(at(0, 10, 30))]), "added"),
-            (task("Dentist (invented)", ["due": .string(soonText), "remind": .string(soonText)]), "added"),
+            (task("Dentist (invented)", ["due": .string(soonText), "remind": .string(soonText), "project": .string(health)]), "added"),
             (task("Water the plants", ["due": .string(at(0, 21)), "remind": .string(at(0, 21))]), "added"),
-            (task("Return the drill", ["due": .string(at(0, 0, timeless: true))]), "added"),
+            (task("Return the drill", ["due": .string(at(0, 0, timeless: true)), "project": .string(errands)]), "added"),
             (task("Pack the bag", ["due": .string(at(1, 7, 30)), "remind": .string(at(1, 7, 30))]), "added"),
-            (task("Market with Sam", ["due": .string(at(3, 10)), "remind": .string(at(3, 10))]), "added"),
+            (task("Market with Sam", ["due": .string(at(3, 10)), "remind": .string(at(3, 10)), "project": .string(errands)]), "added"),
+            (task("Library books", ["due": .string(at(5, 0, timeless: true)), "project": .string(errands)]), "added"),
+            (task("Physio", ["due": .string(at(7, 16)), "remind": .string(at(7, 16)), "project": .string(health)]), "added"),
+            (task("Call Mum", ["due": .string(at(9, 18)), "remind": .string(at(9, 18))]), "added"),
+            (task("Renew pass", ["due": .string(at(12, 0, timeless: true))]), "added"),
             (task("Bins out", ["repeat": .string("FREQ=WEEKLY;BYDAY=TU"), "start": .string(at(0, 19))]), "added"),
         ]
         for (rec, why) in seeds {
