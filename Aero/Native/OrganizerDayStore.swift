@@ -10,6 +10,10 @@ final class OrganizerDayStore: ObservableObject {
     /// "YYYY-MM-DD"; empty is today (Organizer says which day that is).
     @Published private(set) var date: String = ""
     @Published private(set) var helpers: [String] = []
+    /// The open things by list, for the Lists tab; nil when this backend does not hold them (the PC's lists open in the web view).
+    @Published private(set) var lists: [ListGroup]?
+    /// The Lists tab is the one showing (it is not a span of the calendar; the held date waits behind it).
+    @Published private(set) var showLists = false
     /// The views a day was opened from, so Back zooms out to where the person was.
     private(set) var trail: [CalendarSpan] = []
 
@@ -19,6 +23,22 @@ final class OrganizerDayStore: ObservableObject {
     init(backend: OrganizerBackend = OrganizerBackends.current()) {
         self.api = backend
         if DemoMode.isOn, let s = DemoMode.screen { span = s }
+        if DemoMode.isOn { date = DemoMode.heldDate; showLists = DemoMode.showListsTab }
+    }
+
+    var backend: OrganizerBackend { api }
+
+    var tab: DayTab { showLists ? .lists : DayTab(span: span) }
+
+    /// The underline tabs: a span is a move in view with the date held; Lists shows the lists and keeps the date.
+    func select(_ tab: DayTab) async {
+        if let s = tab.span {
+            showLists = false
+            await move(span: s)
+        } else {
+            showLists = true
+            await load()
+        }
     }
 
     var backendKind: BackendKind { api.kind }
@@ -30,14 +50,17 @@ final class OrganizerDayStore: ObservableObject {
             date = got.date
             failure = nil
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? "Couldn't load your day. Try again."
+            // the one shape: what was being done, which step stopped (the key under it says what can be done now)
+            failure = "Showing your day stopped at reading your records."
         }
+        lists = try? await api.lists()
         if answer?.mode == .simple { helpers = await api.helperNames() }
     }
 
     /// A move in time (same view) or in view (the zoom). The zoom is ChatGPT's suggestion, accepted by the owner; the views animate it with
     /// matchedGeometryEffect on the reference date's element.
     func move(span to: CalendarSpan? = nil, date newDate: String? = nil) async {
+        showLists = false
         if let to, to != span {
             if to == .day { trail.append(span) } else { trail.removeAll() }
             span = to

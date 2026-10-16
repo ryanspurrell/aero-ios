@@ -12,12 +12,15 @@ protocol OrganizerBackend {
     func quickAdd(_ text: String) async throws -> QuickAddOutcome
     /// "Something else": none of the readings offered fits; the line stays a plain task.
     func keepPlain(_ question: Question) async throws
+    /// The open things grouped by list, for the Lists tab. nil when this backend does not hold them (the PC's lists are drawn by the web view).
+    func lists() async throws -> [ListGroup]?
 }
 
 enum BackendKind: String { case pc, phone }
 
 extension OrganizerBackend {
     func send(_ name: String) async throws { try await send(name, [:]) }
+    func lists() async throws -> [ListGroup]? { nil }
 }
 
 /// What a typed line became.
@@ -29,6 +32,24 @@ struct QuickAddOutcome {
     var question: Question?
     /// The index of the likeliest choice, only when one reading really is likelier than the next (the web says "Likeliest" only then).
     var likeliest: Int?
+    /// The short ids (first 8 characters) of the records the line made, so Undo can take them back. Empty when this backend made none the app
+    /// can name (the PC reads the line itself).
+    var saved: [String] = []
+    /// When the first item was set for, as the record keeps it ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM"); nil when it has no time of its own yet.
+    var when: String?
+    /// The line was something already on the list, so nothing was added.
+    var alreadyThere = false
+}
+
+/// Quick add stopped at one named step (the one shape: what was being done, which step stopped, what can be done now).
+struct QuickAddStopped: LocalizedError {
+    enum Step: String {
+        case reading = "reading it"
+        case keeping = "keeping it on your phone"
+        case asking = "asking your PC"
+    }
+    var step: Step
+    var errorDescription: String? { "Stopped at \(step.rawValue)." }
 }
 
 /// Which backend the app uses: the PC when one is set up (an address was entered), otherwise the phone's own records.

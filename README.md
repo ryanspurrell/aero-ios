@@ -207,8 +207,11 @@ The Swift was written on Linux and has never been compiled. Unverified:
 
 ## Native screens (`Aero/Native/`, 2026-10-15, branch `organizer-timeline`; not compiled)
 
-The app opens on a native home (`OrganizerHomeScreen`), organizer first; it opens the day (`OrganizerDayScreen`: timeline or as simple
-as it can be, with week, month and year by zoom, pinch and tabs). Both draw one answer, Organizer's `calendar`
+The app opens on the calendar (`OrganizerDayScreen`, from 2026-10-16; before that on a today-only home, `OrganizerHomeScreen`, which is
+still in the project but not shown): Day, Week, Month, Year and Lists as underline tabs around one held date, arrows and a swipe to move
+between days, and the box at the bottom on every tab. A typed line leaves a quiet note at the box saying what was saved and for when, with
+Undo; if reading or keeping it stops, the note says what was being done, which step stopped and has a Try again key (`QuickAddModel`).
+On the phone, Lists shows every open thing by list, including the ones with no day, which no day shows (`PhoneLists`). The days draw one answer, Organizer's `calendar`
 (`organizer_timeline.py`), asked through Aero's server the way the page asks (`OrganizerAPI`, the web view's sign-in cookie copied into
 URLSession). A colour is Organizer's (a name or hex), looked up as a theme token named `Organizer/<name>` in the asset catalog, never
 chosen in code; those tokens are not in the catalog yet. Anything not drawn natively opens in the web view. No Mac was at hand: nothing here

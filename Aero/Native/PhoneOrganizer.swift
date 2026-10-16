@@ -153,11 +153,15 @@ final class PhoneOrganizer: OrganizerBackend {
 
     func quickAdd(_ text: String) async throws -> QuickAddOutcome {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let book = try store.book()
+        // each step that can stop is named, so the screen can say which one it was
+        let book: OrganizerBook
+        do { book = try store.book() } catch { throw QuickAddStopped(step: .keeping) }
         let lists: [JSONValue] = book.now.filter { $0.value.type == "project" && ["active", "parked"].contains($0.value.status) }
             .map { .object(["id": .string($0.key), "title": .string($0.value.title)]) }
-        let got = try await reader.call("quickadd", ["text": .string(line), "now": .string(nowText()), "lists": .array(lists)])
-        guard let object = got.objectValue, let first = object["first"]?.objectValue else { throw ReaderFailure.said("no item came back") }
+        let got: JSONValue
+        do { got = try await reader.call("quickadd", ["text": .string(line), "now": .string(nowText()), "lists": .array(lists)]) }
+        catch { throw QuickAddStopped(step: .reading) }
+        guard let object = got.objectValue, let first = object["first"]?.objectValue else { throw QuickAddStopped(step: .reading) }
         var made: [(String, [String: JSONValue])] = []
         for var rec in [first] + (object["more"]?.arrayValue?.compactMap { $0.objectValue } ?? []) {
             // a thing to buy already on the list is said, not added twice (the PC's rule)
@@ -167,12 +171,30 @@ final class PhoneOrganizer: OrganizerBackend {
             rec["basis"] = .object(["status": .string("said"), "by": .string(Self.person)])
             rec["locked"] = .bool(false)             // Open: the phone has no Locked mode yet, and the day shows only what is marked Open
             let oid = PhoneStore.newID()
-            try store.put(oid: oid, rec: rec, by: Self.person, why: "added", replaces: nil)
+            do { try store.put(oid: oid, rec: rec, by: Self.person, why: "added", replaces: nil) } catch { throw QuickAddStopped(step: .keeping) }
             made.append((oid, rec))
         }
         refreshRemindersInBackground()
-        guard let (oid, rec) = made.first else { return QuickAddOutcome(title: first["title"]?.stringValue ?? line, typed: line, question: nil, likeliest: nil) }
-        return QuickAddOutcome(title: rec["title"]?.stringValue ?? line, typed: line, question: Self.question(oid: oid, rec: rec), likeliest: Self.likeliest(rec))
+        guard let (oid, rec) = made.first else {
+            return QuickAddOutcome(title: first["title"]?.stringValue ?? line, typed: line, question: nil, likeliest: nil, alreadyThere: true)
+        }
+        let question = Self.question(oid: oid, rec: rec)
+        return QuickAddOutcome(title: rec["title"]?.stringValue ?? line, typed: line, question: question, likeliest: Self.likeliest(rec),
+                               saved: made.map { String($0.0.prefix(8)) }, when: question == nil ? Self.whenOf(rec) : nil)
+    }
+
+    /// The time a record was set for, as it keeps it: due, else remind, else start; nil when it has none.
+    static func whenOf(_ rec: [String: JSONValue]) -> String? {
+        for k in ["due", "remind", "start"] {
+            if let v = rec[k]?.stringValue, !v.trimmingCharacters(in: .whitespaces).isEmpty { return v }
+        }
+        return nil
+    }
+
+    // MARK: lists
+
+    func lists() async throws -> [ListGroup]? {
+        PhoneLists.groups(book: try store.book())
     }
 
     /// The question a record still holds (organizer_timeline.py `question_of`): only a reading that is one plain item can be chosen, and

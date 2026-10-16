@@ -12,13 +12,32 @@ enum DemoMode {
     static var screen: CalendarSpan? { UserDefaults.standard.string(forKey: "aero-demo-screen").flatMap { CalendarSpan(rawValue: $0) } }
     /// -aero-demo-extras 1: draw Carry on and the small keys with invented content, to see the whole home of the mock
     static var showExtras: Bool { isOn && UserDefaults.standard.bool(forKey: "aero-demo-extras") }
+    /// -aero-demo-tab lists: open on the Lists tab
+    static var showListsTab: Bool { UserDefaults.standard.string(forKey: "aero-demo-tab") == "lists" }
+    /// -aero-demo-offset 1: hold the day that many days from today (1 is tomorrow); "" is today
+    static var heldDate: String {
+        let n = UserDefaults.standard.integer(forKey: "aero-demo-offset")
+        guard isOn, n != 0, let day = Calendar.current.date(byAdding: .day, value: n, to: Date()) else { return "" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: day)
+    }
+    /// -aero-demo-submit "<a line>": type that line into the box and press done, once; the box's note is then on screen for the picture
+    static var submitLine: String? { UserDefaults.standard.string(forKey: "aero-demo-submit") }
+    private static var submitDone = false
+    static func takeSubmitLine() -> String? {
+        guard isOn, !submitDone, let line = submitLine, !line.isEmpty else { return nil }
+        submitDone = true
+        return line
+    }
     private static var quickAddDone = false
 
     private static func documents() -> URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 
-    private static func write(_ name: String, _ object: Any) {
+    static func write(_ name: String, _ object: Any) {
         let url = documents().appendingPathComponent(name)
         if let text = object as? String { try? text.write(to: url, atomically: true, encoding: .utf8); return }
         if let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]) { try? data.write(to: url) }

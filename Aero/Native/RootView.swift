@@ -1,18 +1,20 @@
 import SwiftUI
 
-/// The first screen. The app opens on the native home, organizer first, whether or not a PC is set up: with a server address it asks the
-/// PC (through Aero's server), without one it uses the phone's own records (OrganizerBackends). The home opens the day (which zooms out to
-/// week, month and year); the screens do not know which they have. What is not drawn natively yet (an item's own screen, a Colony event,
-/// the lists, the chats and the rest of Aero) opens in the web view when a PC is set up; with none, the header's menu has a row to connect a
-/// PC, which opens the web view's first-launch screen where the address is asked for. The system's navigation bar is not used: each screen
-/// draws its own header, as the mocks do.
+/// The first screen. The app opens on the calendar around today: Day, Week, Month, Year and Lists as underline tabs around one held date, with
+/// the box at the bottom on every tab, whether or not a PC is set up (with a server address it asks the PC through Aero's server, without
+/// one it uses the phone's own records; OrganizerBackends). The screens do not know which they have. What is not drawn natively yet (an item's
+/// own screen, a Colony event, the PC's lists, the chats and the rest of Aero) opens in the web view when a PC is set up; with none, the
+/// header's menu has a row to connect a PC, which opens the web view's first-launch screen where the address is asked for. The system's
+/// navigation bar is not used: each screen draws its own header, as the mocks do.
+///
+/// (Before 2026-10-16 the first screen was a today-only home with the calendar one tap away in a menu; the first TestFlight build showed that
+/// a person did not find it: "there's also no other view in the app". OrganizerHomeScreen is still in the project, not shown.)
 ///
 /// What is not here yet: opening one particular item or event in the web view. `WebViewController` opens the server's address; moving it
 /// to an item's own screen needs a way to give it a path, which it does not have. Until then a tap on an item opens Aero's own front in the
 /// web view, from which the item is one tap.
 struct RootView: View {
     @State private var showWeb = false
-    @State private var showDay = DemoMode.isOn && DemoMode.screen != nil
     @State private var hasAddress = AppInfo.address != nil
     @State private var ready = !DemoMode.isOn
     @Environment(\.scenePhase) private var scenePhase
@@ -23,17 +25,11 @@ struct RootView: View {
                 ProgressView()
             } else {
                 NavigationStack {
-                    OrganizerHomeScreen(openDay: { showDay = true },
-                                        open: { _ in if hasAddress { showWeb = true } },
-                                        menuTitle: hasAddress ? "More" : "Connect your PC",
-                                        menuAction: { showWeb = true })
+                    OrganizerDayScreen(open: { _ in if hasAddress { showWeb = true } },
+                                       openLists: { if hasAddress { showWeb = true } },
+                                       menuTitle: hasAddress ? "More" : "Connect your PC",
+                                       menuAction: { showWeb = true })
                         .id(hasAddress)      // a new set of stores when a PC is set up or removed
-                        .navigationDestination(isPresented: $showDay) {
-                            OrganizerDayScreen(open: { _ in if hasAddress { showWeb = true } },
-                                               openLists: { if hasAddress { showWeb = true } },
-                                               back: { showDay = false })
-                                .id(hasAddress)
-                        }
                 }
                 .fullScreenCover(isPresented: $showWeb) {
                     ZStack(alignment: .topTrailing) {

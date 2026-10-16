@@ -14,14 +14,18 @@ struct OrganizerDayScreen: View {
     /// Opens a thing's owner's own screen: Organizer's item, or Colony's event.
     var open: (OpenRef) -> Void = { _ in }
     var openLists: () -> Void = {}
-    var back: () -> Void = {}
+    /// The way back to where this was opened from; nil when this is the first screen.
+    var back: (() -> Void)? = nil
+    /// What the menu offers beside the calendar: a row to set up a PC, or to open the rest of Aero.
+    var menuTitle = "More"
+    var menuAction: () -> Void = {}
     @Namespace private var zoom
     @GestureState private var pinch: CGFloat = 1
 
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
-                backRow
+                topRow
                 tabs.padding(.horizontal, Look.Space.gutter)
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Look.Space.snug) {
@@ -29,19 +33,26 @@ struct OrganizerDayScreen: View {
                             Text(note).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
                         }
                         if let failure = store.failure {
+                            // the one shape: what was being done, which step stopped, and a key that does what can be done now
                             Text(failure).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
+                            Button { Task { await store.load() } } label: {
+                                Text("Try again").fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
+                                    .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
+                                    .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent))
+                            }
+                            .buttonStyle(BubblePressStyle())
                         }
                         content
                     }
                     .padding(.horizontal, Look.Space.gutter)
                     .padding(.top, 14)
-                    .padding(.bottom, store.answer?.span == .day ? 110 : 24)
+                    .padding(.bottom, 120)
                 }
             }
-            // one box at the bottom, from the day view only
-            if store.answer?.span == .day {
-                NewBox(onAdded: { Task { await store.load() } }).padding(.horizontal, Look.Space.gutter).padding(.bottom, 8)
-            }
+            // one box at the bottom, on every tab: a line typed for another day is saved for that day wherever the person is
+            NewBox(onAdded: { Task { await store.load() } }, holding: store.date,
+                   onShow: { day in Task { await store.move(span: .day, date: day) } })
+                .padding(.horizontal, Look.Space.gutter).padding(.bottom, 8)
         }
         .fingusGround()
         .toolbar(.hidden, for: .navigationBar)
@@ -49,13 +60,14 @@ struct OrganizerDayScreen: View {
             MagnificationGesture()
                 .updating($pinch) { value, state, _ in state = value }
                 .onEnded { value in
+                    guard !store.showLists else { return }
                     // a step in or out: the ratio is picked, not grounded (as the page's)
                     if value >= 1.3 { Task { await zoomAnimated(1) } } else if value <= 1 / 1.3 { Task { await zoomAnimated(-1) } }
                 }
         )
         .simultaneousGesture(
             DragGesture(minimumDistance: 24).onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) * 1.5, abs(value.translation.width) >= 60,
+                guard !store.showLists, abs(value.translation.width) > abs(value.translation.height) * 1.5, abs(value.translation.width) >= 60,
                       let target = value.translation.width < 0 ? nextDate : prevDate else { return }
                 Task { await store.move(date: target) }
             }
@@ -90,31 +102,41 @@ struct OrganizerDayScreen: View {
 
     // MARK: back, and tabs
 
-    /// The way back to the home: the page has a round back key at the top; here a quiet chevron row, with room for the status bar.
-    private var backRow: some View {
+    /// The top row: a way back when this was opened from somewhere, and the quiet menu at the right.
+    private var topRow: some View {
         HStack {
-            Button(action: back) {
-                HStack(spacing: Look.Space.hair) { Image(systemName: "chevron.left").font(.system(size: 15, weight: .bold)); Text("Today").fx(Look.Size.tab, style: .subheadline) }
-                    .foregroundStyle(Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
+            if let back {
+                Button(action: back) {
+                    HStack(spacing: Look.Space.hair) { Image(systemName: "chevron.left").font(.system(size: 15, weight: .bold)); Text("Today").fx(Look.Size.tab, style: .subheadline) }
+                        .foregroundStyle(Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
+                }
+                .accessibilityLabel("Back to today")
             }
-            .accessibilityLabel("Back to today")
             Spacer()
+            Menu {
+                Button { menuAction() } label: { Label(menuTitle, systemImage: store.backendKind == .phone ? "desktopcomputer" : "ellipsis") }
+            } label: {
+                Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Look.Palette.soft)
+                    .frame(width: Look.Space.sizeTap, height: Look.Space.sizeTap)
+            }
+            .accessibilityLabel("Menu")
         }
         .padding(.horizontal, Look.Space.gutter)
     }
 
-    /// Underline tabs: Day, Week, Month, Year (and Lists, only when a PC is set up).
+    /// Underline tabs around the one held date: Day, Week, Month, Year and Lists. With a PC, Lists opens the PC's own lists in the web view.
     private var tabs: some View {
         VStack(spacing: 0) {
             HStack(spacing: 18) {
                 if store.answer?.mode == .simple {
                     tab("Today", selected: true) {}
                 } else {
-                    ForEach(CalendarSpan.allCases) { s in
-                        tab(s.title, selected: store.span == s) { Task { await switchTo(s) } }
+                    ForEach(DayTab.allCases.filter { $0 != .lists }) { t in
+                        tab(t.title, selected: store.tab == t) { Task { await switchTo(t) } }
                     }
+                    if store.backendKind == .phone { tab(DayTab.lists.title, selected: store.tab == .lists) { Task { await switchTo(.lists) } } }
                 }
-                if store.backendKind == .pc { tab("Lists", selected: false) { openLists() } }
+                if store.backendKind == .pc { tab(DayTab.lists.title, selected: false) { openLists() } }
                 Spacer(minLength: 0)
             }
             Rectangle().fill(Look.Palette.rule).frame(height: 2)
@@ -133,14 +155,16 @@ struct OrganizerDayScreen: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    private func switchTo(_ s: CalendarSpan) async {
-        withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { Task { await store.move(span: s) } }
+    private func switchTo(_ t: DayTab) async {
+        withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { Task { await store.select(t) } }
     }
 
     // MARK: content
 
     @ViewBuilder private var content: some View {
-        if let a = store.answer {
+        if store.showLists {
+            ListsView(groups: store.lists)
+        } else if let a = store.answer {
             switch a.span {
             case .day:
                 if let d = a.day {
@@ -444,15 +468,18 @@ struct YearView: View {
 struct NewBox: View {
     var assistantSetUp = false
     var onAdded: () -> Void = {}
+    /// The day the screen is holding ("YYYY-MM-DD"), so the note offers to open the saved day only when it is another one.
+    var holding = ""
+    var onShow: ((String) -> Void)? = nil
     @State private var text = ""
-    @State private var asking: QuickAddOutcome?
-    @State private var failure: String?
+    @StateObject private var model = QuickAddModel()
     @FocusState private var focused: Bool
-    private let backend = OrganizerBackends.current()
+
+    private var backend: OrganizerBackend { model.backend }
 
     var body: some View {
         VStack(spacing: Look.Space.hair) {
-            if let failure { Text(failure).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft).padding(.horizontal) }
+            note
             HStack(spacing: 0) {
                 TextField("", text: $text, prompt: Text(assistantSetUp ? "Task, reminder, note, or ask…" : "Task, reminder, or note…").foregroundColor(Look.Palette.inputText))
                     .fx(Look.Size.input, style: .body)
@@ -474,26 +501,90 @@ struct NewBox: View {
             .background(Capsule().fill(Look.Palette.input)
                 .shadow(color: Look.Palette.shadow.opacity(Look.Bubble.shadowInput.alpha), radius: Look.Bubble.shadowInput.blur / 2, x: 0, y: Look.Bubble.shadowInput.y))
         }
-        .sheet(item: Binding<AskItem?>(get: { asking.flatMap { $0.question == nil ? nil : AskItem(outcome: $0) } }, set: { if $0 == nil { asking = nil } })) { item in
-            QuickAddAsk(outcome: item.outcome, backend: backend) { asking = nil; onAdded() }
+        .animation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping), value: model.saved)
+        .animation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping), value: model.stopped)
+        .sheet(item: Binding<AskItem?>(get: { model.asking.flatMap { $0.question == nil ? nil : AskItem(outcome: $0) } }, set: { if $0 == nil { model.asking = nil } })) { item in
+            QuickAddAsk(outcome: item.outcome, backend: backend) { model.asking = nil; onAdded() }
                 .presentationDetents([.medium, .large])
         }
-        .task { await DemoMode.runQuickAddIfAsked(backend: backend) { outcome in asking = outcome; onAdded() } }
+        .onAppear { model.onChanged = onAdded }
+        .onChange(of: text) { if !$0.isEmpty { model.clear() } }
+        .task { await DemoMode.runQuickAddIfAsked(backend: backend) { outcome in model.asking = outcome; onAdded() } }
+        .task {
+            // the demo run types one line and presses done; the report says what the note said
+            guard let line = DemoMode.takeSubmitLine() else { return }
+            await model.submit(line)
+            DemoMode.write("demo-submit.json", ["line": line, "saved": model.saved?.words ?? "", "stopped": model.stopped?.text ?? ""])
+        }
+    }
+
+    /// The quiet note at the box: a result with what it can do, or, when something stopped, the one shape and its key.
+    @ViewBuilder private var note: some View {
+        if let stopped = model.stopped {
+            noteRow(stopped.text, keys: [(stopped.key, { _ = Task { await model.retry() } })])
+        } else if let saved = model.saved {
+            noteRow(saved.words, keys: noteKeys(saved))
+        }
+    }
+
+    private func noteKeys(_ saved: QuickAddModel.Saved) -> [(String, () -> Void)] {
+        var keys: [(String, () -> Void)] = []
+        if let day = saved.day, day != holding, let onShow {
+            keys.append(("Show " + (SavedWords.dayWord(day, now: Date()) ?? day), { onShow(day) }))
+        }
+        if !saved.refs.isEmpty { keys.append(("Undo", { _ = Task { await model.undo() } })) }
+        return keys
+    }
+
+    private func noteRow(_ words: String, keys: [(String, () -> Void)]) -> some View {
+        HStack(spacing: Look.Space.tight) {
+            Text(words).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(Array(keys.enumerated()), id: \.offset) { item in
+                Button(action: item.element.1) {
+                    Text(item.element.0).fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
+                        .padding(.horizontal, Look.Space.inset).frame(minHeight: Look.Space.sizeTap)
+                        .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent))
+                }
+                .buttonStyle(BubblePressStyle())
+            }
+        }
+        .padding(.leading, Look.Space.pad).padding(.trailing, Look.Space.hair)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fingusCard(radius: Look.Bubble.radiusRow)
+        .accessibilityElement(children: .contain)
     }
 
     private func submit() {
         let line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return }
         text = ""
-        Task {
-            do {
-                let outcome = try await backend.quickAdd(line)
-                failure = nil
-                if outcome.question != nil { asking = outcome }
-            } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "That didn't save. Try again."
+        Task { await model.submit(line) }
+    }
+}
+
+// MARK: the lists
+
+/// The Lists tab: everything open, by list. A thing with no day is here and nowhere else, so this is where a line without a time can be found.
+struct ListsView: View {
+    let groups: [ListGroup]?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Look.Space.gap) {
+            if let groups {
+                if groups.isEmpty {
+                    Text("Nothing on your lists yet. Type a task in the box below.").fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
+                }
+                ForEach(groups) { g in
+                    VStack(alignment: .leading, spacing: Look.Space.tight) {
+                        Text(g.title).fx(Look.Size.question, style: .subheadline).foregroundStyle(Look.Palette.soft)
+                        ForEach(g.items) { i in
+                            PointerView(pointer: Pointer(owner: "organizer", id: i.id, title: i.title, meta: i.when, colorValue: g.color, icon: g.icon), size: .block)
+                        }
+                    }
+                }
+            } else {
+                ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
             }
-            onAdded()
         }
     }
 }

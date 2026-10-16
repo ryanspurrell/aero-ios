@@ -1,7 +1,7 @@
 name: Phone store
 
 # Builds the app with its own Organizer and the embedded Python reader, runs the Swift tests in the iOS Simulator, then launches the app
-# there with invented data and no PC (launch arguments -aero-demo phone, -aero-demo-quickadd "<line>"), takes pictures of the day and of
+# there with invented data and no PC (launch arguments -aero-demo phone, -aero-demo-quickadd "<line>"), takes pictures of the day, the week, the month, the year and the Lists tab, of the note after a line for tomorrow, of tomorrow, and of
 # quick add asking, and reports the app's size and the standard library files the reader imported.
 # Started by hand, or by a push to the branch phone-store.
 on:
@@ -92,7 +92,16 @@ jobs:
           shot week -aero-demo-screen week
           shot month -aero-demo-screen month
           shot year -aero-demo-screen year
-          shot home-extras -aero-demo-extras 1
+          shot lists -aero-demo-tab lists
+          # 1b. a line typed for tomorrow: the note at the box (with Undo), then the same launch holding tomorrow, where the item is; and a line
+          # with no day, which is on the Lists tab
+          submit_shot() { name="$1"; line="$2"; shift 2; rm -f "$(docs)/demo-submit.json"
+                          xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone -aero-demo-submit "$line" "$@" >/dev/null
+                          wait_for demo-submit.json; xcrun simctl io "$SIM_UDID" screenshot "out/pics/$name.png"
+                          cp "$(docs)/demo-submit.json" "out/$name.json"; xcrun simctl terminate "$SIM_UDID" "$BUNDLE_ID" || true; }
+          submit_shot saved-tomorrow-note "call mom tomorrow"
+          submit_shot saved-tomorrow-day "call mom tomorrow" -aero-demo-offset 1
+          submit_shot saved-no-day-lists "buy milk" -aero-demo-tab lists
           # 2. a line the reader is not sure of: quick add asks
           rm -f "$(docs)/demo-quickadd.json"
           xcrun simctl launch "$SIM_UDID" "$BUNDLE_ID" -aero-demo phone -aero-demo-quickadd "call Sam at 9"
