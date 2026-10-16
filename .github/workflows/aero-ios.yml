@@ -40,6 +40,7 @@ jobs:
           xcodebuild build \
             -project Aero.xcodeproj -scheme Aero -configuration Debug \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES \
             CODE_SIGNING_ALLOWED=NO \
             "${settings[@]}"
       - name: Print how long this job took
