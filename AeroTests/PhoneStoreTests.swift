@@ -148,7 +148,8 @@ final class PhoneOrganizerTests: XCTestCase {
         reader.answers["quickadd"] = .object(["first": .object(["type": .string("task"), "title": .string("call Sam at 9"), "status": .string("open"),
             "readings": .object(["state": .string("not answered"), "kept": .array([.object(["label": .string("9 AM"), "likelihood": .number(0.5), "items": .array([.object(["type": .string("task"), "args": .object(["due": .string("2026-10-15 09:00")])])])])])])]), "more": .array([])])
         let phone = try make(reader)
-        let q = try XCTUnwrap(try await phone.quickAdd("call Sam at 9").question)
+        let outcome = try await phone.quickAdd("call Sam at 9")
+        let q = try XCTUnwrap(outcome.question)
         try await phone.keepPlain(q)
         let v = try XCTUnwrap(try phone.store.book().now.values.first)
         XCTAssertEqual(v.rec["attention"], .string("now"))
