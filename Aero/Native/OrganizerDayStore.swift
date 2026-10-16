@@ -30,7 +30,7 @@ final class OrganizerDayStore: ObservableObject {
             date = got.date
             failure = nil
         } catch {
-            failure = (error as? LocalizedError)?.errorDescription ?? "No answer. Try again."
+            failure = (error as? LocalizedError)?.errorDescription ?? "Couldn't load your day. Try again."
         }
         if answer?.mode == .simple { helpers = await api.helperNames() }
     }

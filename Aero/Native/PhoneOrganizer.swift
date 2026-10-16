@@ -9,8 +9,8 @@ final class PhoneOrganizer: OrganizerBackend {
         case notOnPhone(String), noSuchItem
         var errorDescription: String? {
             switch self {
-            case .notOnPhone: return "Not on this phone yet."
-            case .noSuchItem: return "Item not found."
+            case .notOnPhone: return "Not on your phone yet."
+            case .noSuchItem: return "That isn't here any more."
             }
         }
     }

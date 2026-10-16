@@ -224,8 +224,8 @@ struct SimpleDayView: View {
         VStack(alignment: .leading, spacing: 16) {
             Text(s.greeting).fx(TypeToken(size: 32, weight: 800), style: .largeTitle).foregroundStyle(Look.Palette.fg)
             Text(s.clock).fx(Look.Size.nextMeta, style: .title3).foregroundStyle(Look.Palette.soft)
-            if let q = (day.rows + day.anytime).compactMap({ $0.question }).first { QuestionInPlace(question: q, store: store) }
-            if let n = s.next { nextCard(n) } else { Text(s.none.isEmpty ? "Nothing planned today." : s.none).fx(Look.Size.nextMeta, style: .title3) }
+            if let waiting = (day.rows + day.anytime).first(where: { $0.question != nil }) { PointerView(pointer: Pointer(waiting), size: .question, actions: .day(store, open: open)) }
+            if let n = s.next { nextCard(n) } else { Text(s.none.isEmpty ? "Your day is clear." : s.none).fx(Look.Size.nextMeta, style: .title3) }
             if !s.behind.isEmpty { listCard("Not done yet", s.behind) }
             if !s.later.isEmpty { listCard("Later", s.later) }
             ForEach(s.did) { line in Label(line.text ?? "", systemImage: "checkmark").fx(Look.Size.nextMeta).foregroundStyle(Look.Palette.fg) }
@@ -271,7 +271,7 @@ struct SimpleDayView: View {
         Button {
             Task { if await store.askForHelp() { asked = true } }
         } label: {
-            Text(asked ? "Asked for help." : "Ask for help")
+            Text(asked ? "You asked for help." : "Ask for help")
                 .fx(Look.Size.itemName, style: .title3).foregroundStyle(Look.Palette.fg)
                 .frame(maxWidth: .infinity, minHeight: 60)
                 .fingusCard(radius: Look.Bubble.radiusInput)
@@ -303,7 +303,7 @@ struct WeekView: View {
                             }
                             .frame(width: 44)
                             if d.free { Text("Free").fx(Look.Size.free, style: .footnote).italic().foregroundStyle(Look.Palette.soft) }
-                            else { FlowPills(pills: d.pills) }
+                            else { PointerFlow(pointers: d.pills.map(Pointer.init)) }
                             Spacer(minLength: 0)
                         }
                         .padding(Look.Space.inset)
@@ -345,8 +345,8 @@ struct MonthView: View {
                         ZStack(alignment: .topLeading) {
                             Text("\(c.day)").fx(Look.Size.cell, style: .footnote).padding(6)
                                 .foregroundStyle(c.inMonth ? Look.Palette.fg : Look.Palette.dim)
-                            HStack(spacing: 3) {
-                                ForEach(Array(c.colors.prefix(4).enumerated()), id: \.offset) { Circle().fill(Fingus.hue($0.element).base).frame(width: Look.Space.sizeDot, height: Look.Space.sizeDot) }
+                            HStack(spacing: Look.Space.hair) {
+                                ForEach(c.pills.prefix(4)) { PointerView(pointer: Pointer($0), size: .dot) }
                             }
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.leading, 6).padding(.bottom, 7)
                             if c.question { Text("?").fx(Look.Size.cell, style: .footnote).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(6) }
@@ -365,9 +365,9 @@ struct MonthView: View {
                 VStack(alignment: .leading, spacing: Look.Space.tight) {
                     Text(Self.dayName(c.date)).fx(Look.Size.subtitle, style: .footnote).foregroundStyle(Look.Palette.soft)
                     if c.pills.isEmpty { Text("Free").fx(Look.Size.free, style: .footnote).italic().foregroundStyle(Look.Palette.soft) }
-                    FlowPills(pills: c.pills)
+                    PointerFlow(pointers: c.pills.map(Pointer.init))
                     Button { Task { await store.move(span: .day, date: c.date) } } label: {
-                        Text("Open the day").fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
+                        Text("Open your day").fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
                             .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
                             .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent))
                     }
@@ -491,7 +491,7 @@ struct NewBox: View {
                 failure = nil
                 if outcome.question != nil { asking = outcome }
             } catch {
-                failure = (error as? LocalizedError)?.errorDescription ?? "Not added. Try again."
+                failure = (error as? LocalizedError)?.errorDescription ?? "That didn't save. Try again."
             }
             onAdded()
         }
@@ -503,54 +503,29 @@ struct AskItem: Identifiable {
     var id: String { outcome.question?.id ?? outcome.typed }
 }
 
-/// The question a typed line raised, as the web asks it: only the readings still live, the likeliest first, then "Something else". It says as
-/// little as it can: the item's title once, one short question, and answers that say only what differs, all one size. It stays a sheet, in
-/// Fingus's look: the ground, Exo 2, each answer a B1 block. A choice is the same `update` the day's own question sends.
+/// The question a typed line raised: the same pointer the day shows in place, drawn at sheet size (Pointer.swift). Its words are cut to the
+/// item's title once, one short question, and answers that say only what differs, all one size.
 struct QuickAddAsk: View {
     let outcome: QuickAddOutcome
     let backend: OrganizerBackend
     var done: () -> Void
-    @State private var failure: String?
 
     var body: some View {
         if let q = outcome.question {
-            let words = QuestionWords.make(question: q)
             ScrollView {
-                VStack(alignment: .leading, spacing: Look.Space.tight) {
-                    Text(words.title).fx(Look.Size.title, style: .title1).foregroundStyle(Look.Palette.fg)
-                    if let typed = words.typed { Text(typed).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft) }
-                    Text(words.ask).fx(Look.Size.itemName, style: .body).foregroundStyle(Look.Palette.fg)
-                        .padding(.top, Look.Space.tight).padding(.bottom, Look.Space.hair)
-                    ForEach(Array(zip(q.choices, words.chips)), id: \.0.index) { c, chip in
-                        answer(chip.text, hue: "accent", note: outcome.likeliest == c.index ? "Likeliest" : nil) {
-                            Task { do { try await backend.apply(c.answer); done() } catch { failure = error.localizedDescription } }
-                        }
-                    }
-                    answer("Something else", hue: nil, note: nil) {
-                        Task { do { try await backend.keepPlain(q); done() } catch { failure = error.localizedDescription } }
-                    }
-                    if let failure { Text(failure).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.now) }
-                }
-                .padding(Look.Space.gutter)
+                PointerView(pointer: Pointer(question: q), size: .sheet, actions: actions, likeliest: outcome.likeliest)
+                    .padding(Look.Space.gutter)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .fingusGround()
         }
     }
 
-    /// One answer: the same width and height as every other, its words at the left. `hue` nil is the plain card.
-    private func answer(_ text: String, hue: String?, note: String?, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(text).fx(Look.Size.itemName).foregroundStyle(hue == nil ? Look.Palette.fg : Look.Palette.ink).multilineTextAlignment(.leading)
-                Spacer(minLength: 0)
-                if let note { Text(note).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.label) }
-            }
-            .padding(.horizontal, Look.Space.pad)
-            .frame(maxWidth: .infinity, minHeight: Look.Space.sizeControl, alignment: .leading)
-            .background {
-                if let hue { Color.clear.bubble(hue) } else { Color.clear.fingusCard(radius: Look.Bubble.radiusItem) }
-            }
-        }
-        .buttonStyle(BubblePressStyle())
+    private var actions: PointerActions {
+        PointerActions(choose: { c in
+            do { try await backend.apply(c.answer); done(); return true } catch { return false }
+        }, keepPlain: { q in
+            do { try await backend.keepPlain(q); done(); return true } catch { return false }
+        })
     }
 }

@@ -72,12 +72,16 @@ struct OrganizerHomeScreen: View {
             if day.simple.later.isEmpty && day.anytime.isEmpty && day.simple.next != nil {
                 Text("Nothing else today.").fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
-            if let q = (day.rows + day.anytime).compactMap({ $0.question }).first {
-                QuestionInPlace(question: q, store: store)
+            if let waiting = (day.rows + day.anytime).first(where: { $0.question != nil }) {
+                PointerView(pointer: Pointer(waiting), size: .question, actions: .day(store, open: { _ in openDay() }))
             }
             let extras = HomeExtrasSource.current()
-            if let carry = extras.carryOn { CarryOnCard(title: carry) }
-            if !extras.keys.isEmpty { ExtrasRow(keys: extras.keys) }
+            if let carry = extras.carryOn {
+                PointerView(pointer: Pointer(owner: "carryon", id: "carryon", title: carry, colorValue: "green", label: "Carry on"), size: .card)
+            }
+            if !extras.keys.isEmpty {
+                HStack(spacing: Look.Space.snug) { ForEach(extras.keys) { PointerView(pointer: Pointer($0), size: .key) } }
+            }
         } else if let failure = store.failure {
             Text(failure).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
         } else {
@@ -105,46 +109,3 @@ enum HomeExtrasSource {
     }
 }
 
-struct CarryOnCard: View {
-    let title: String
-    var body: some View {
-        HStack(spacing: Look.Space.snug) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("CARRY ON").fx(Look.Size.carryLabel, style: .caption1).foregroundStyle(Look.Palette.label)
-                Text(title).fx(Look.Size.carryTitle, style: .body).foregroundStyle(Look.Palette.ink)
-            }
-            Spacer()
-            Text("›").font(.system(size: 22)).foregroundStyle(Look.Palette.label)
-        }
-        .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.inset)
-        .background {
-            let c = Fingus.hue("green")
-            RoundedRectangle(cornerRadius: Look.Bubble.radiusCard, style: .continuous)
-                .fill(LinearGradient(colors: [c.light, c.base], startPoint: UnitPoint(x: 0.33, y: 0.03), endPoint: UnitPoint(x: 0.67, y: 0.97)))
-                .shadow(color: Look.Palette.shadow.opacity(Look.Bubble.shadowCard.alpha), radius: Look.Bubble.shadowCard.blur / 2, x: 0, y: Look.Bubble.shadowCard.y)
-        }
-        .padding(.top, 2)
-    }
-}
-
-struct ExtrasRow: View {
-    let keys: [HomeExtras.Key]
-    var body: some View {
-        HStack(spacing: Look.Space.snug) {
-            ForEach(keys) { k in
-                HStack(spacing: Look.Space.tight) {
-                    Text(k.letter).fx(TypeToken(size: 13, weight: 800), style: .caption1).foregroundStyle(Look.Palette.ink)
-                        .frame(width: 26, height: 26)
-                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(LinearGradient(colors: [Fingus.hue(k.hue).light, Fingus.hue(k.hue).base], startPoint: .topLeading, endPoint: .bottomTrailing)))
-                    Text(k.name).fx(Look.Size.extra, style: .subheadline).foregroundStyle(Look.Palette.fg).lineLimit(1).minimumScaleFactor(0.8)
-                }
-                .frame(maxWidth: .infinity, minHeight: Look.Space.sizeInput + Look.Space.hair)
-                .fingusCard(radius: Look.Bubble.radiusExtra)
-                .overlay(alignment: .topTrailing) {
-                    if k.dot { Circle().fill(Look.Palette.now).frame(width: 12, height: 12).padding(.top, 8).padding(.trailing, 10) }
-                }
-            }
-        }
-        .padding(.top, 2)
-    }
-}

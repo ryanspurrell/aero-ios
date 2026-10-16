@@ -14,6 +14,8 @@ struct DayRows: View {
     let store: OrganizerDayStore
     let open: (OpenRef) -> Void
 
+    private var actions: PointerActions { .day(store, open: open) }
+
     var body: some View {
         let nextID = bigNext ? day.simple.next?.id : nil
         VStack(alignment: .leading, spacing: Look.Space.gap) {
@@ -26,11 +28,10 @@ struct DayRows: View {
                         let isNext = row.id == nextID
                         VStack(alignment: .leading, spacing: Look.Space.tight) {
                             SpineRow(metrics: metrics, timeText: row.timeText ?? "", knot: Fingus.hue(row.color).base, centered: !isNext) {
-                                if isNext { NextBlock(item: row) { if let o = row.open { open(o) } } }
-                                else { ItemBlock(item: row) { if let o = row.open { open(o) } } }
+                                PointerView(pointer: Pointer(row), size: isNext ? .next : .block, actions: actions)
                             }
-                            if inlineQuestions, let q = row.question {
-                                QuestionInPlace(question: q, store: store).padding(.leading, metrics.blockX)
+                            if inlineQuestions, row.question != nil {
+                                PointerView(pointer: Pointer(row), size: .question, actions: actions).padding(.leading, metrics.blockX)
                             }
                         }
                         .id(row.id)
@@ -39,11 +40,11 @@ struct DayRows: View {
             }
             if !day.anytime.isEmpty {
                 Text(day.isToday ? "Today, no set time" : "No set time").fx(Look.Size.question, style: .subheadline).foregroundStyle(Look.Palette.soft)
-                    .padding(.top, 6)
+                    .padding(.top, Look.Space.hair)
                 ForEach(day.anytime) { item in
                     VStack(alignment: .leading, spacing: Look.Space.tight) {
-                        ItemBlock(item: item) { if let o = item.open { open(o) } }
-                        if inlineQuestions, let q = item.question { QuestionInPlace(question: q, store: store) }
+                        PointerView(pointer: Pointer(item), size: .block, actions: actions)
+                        if inlineQuestions, item.question != nil { PointerView(pointer: Pointer(item), size: .question, actions: actions) }
                     }
                 }
             }
@@ -55,32 +56,3 @@ struct DayRows: View {
     var nextRowID: String? { day.simple.next.flatMap { n in day.rows.first { $0.id == n.id }?.id } }
 }
 
-/// The home's big block: Next, its name, how long until it (as the day says it).
-struct NextBlock: View {
-    let item: DayItem
-    var onTap: () -> Void = {}
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(alignment: .leading, spacing: Look.Space.hair / 2) {
-                Text("NEXT").fx(Look.Size.nextLabel, style: .caption1).tracking(1).foregroundStyle(Look.Palette.label)
-                Text(item.title ?? "").fx(Look.Size.nextName, style: .title1).foregroundStyle(Look.Palette.ink).padding(.top, 4)
-                if let line = item.until ?? item.endText.map({ "Until " + $0 }) {
-                    Text(line).fx(Look.Size.nextMeta, style: .subheadline).foregroundStyle(Look.Palette.label)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Look.Space.gutter).padding(.vertical, 18)
-            .background {
-                let c = Fingus.hue(item.color)
-                ZStack {
-                    RoundedRectangle(cornerRadius: Look.Bubble.radiusNext, style: .continuous)
-                        .fill(LinearGradient(colors: [c.light, c.base], startPoint: UnitPoint(x: 0.33, y: 0.03), endPoint: UnitPoint(x: 0.67, y: 0.97)))
-                        .shadow(color: Look.Palette.shadow.opacity(Look.Bubble.shadowNext.alpha), radius: Look.Bubble.shadowNext.blur / 2, x: 0, y: Look.Bubble.shadowNext.y)
-                }
-            }
-        }
-        .buttonStyle(BubblePressStyle())
-        .accessibilityLabel("Next: \(item.title ?? ""), \(item.until ?? ""). Opens your day.")
-    }
-}

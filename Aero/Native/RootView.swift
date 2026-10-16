@@ -25,7 +25,7 @@ struct RootView: View {
                 NavigationStack {
                     OrganizerHomeScreen(openDay: { showDay = true },
                                         open: { _ in if hasAddress { showWeb = true } },
-                                        menuTitle: hasAddress ? "More" : "Connect a PC",
+                                        menuTitle: hasAddress ? "More" : "Connect your PC",
                                         menuAction: { showWeb = true })
                         .id(hasAddress)      // a new set of stores when a PC is set up or removed
                         .navigationDestination(isPresented: $showDay) {
