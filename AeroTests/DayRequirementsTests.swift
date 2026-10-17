@@ -96,4 +96,16 @@ final class DayRequirementsTests: XCTestCase {
         XCTAssertEqual(p.meta, "Due Friday; moved to Wednesday 4:00 PM")
         XCTAssertEqual(p.open?.id, "2026-10-14")
     }
+
+    /// Not run when written. A day with only quiet rows at no set time has nothing else; the home's rule reads them as quiet.
+    func testQuietRowsAreNotSomethingElseToday() throws {
+        let d = try day(rows: [])
+        XCTAssertTrue(d.anytime.isEmpty)
+        let quiet = try decode("""
+        {"date":"2026-10-16","label":"Today","date_text":"Friday 16 October","is_today":true,"prev":"","next":"",
+         "rows":[],"anytime":[\(item("\"id\":\"q\",\"title\":\"Moved\",\"state\":\"moved\",\"time_text\":\"\"" ))],
+         "simple":{"greeting":"","clock":"","next":null,"behind":[],"later":[],"did":[],"none":""}}
+        """)
+        XCTAssertFalse(quiet.anytime.contains(where: { !Pointer.isQuiet($0.state) }))
+    }
 }

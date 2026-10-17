@@ -118,6 +118,14 @@ def _hm(d):
     return d.strftime("%H:%M")
 
 
+def _due_timed(rec):
+    """Whether a task's due (else remind) time carries an hour: what the person gave where it was recorded (`due_timed`), else the old
+    reading (midnight is how a date alone was kept)."""
+    field = "due" if rec.get("due") else "remind"
+    flag = rec.get(field + "_timed")
+    return flag if isinstance(flag, bool) else _has_time(rec.get(field))
+
+
 def _has_time(text):
     """A stored time carries an hour; midnight is how a date alone is kept, so it is read as no time."""
     t = str(text or "").strip()
@@ -162,28 +170,19 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
     "was_due", "Done later, on <day>", and its done row says "Was due <day>". Within a time no order is made: the entries stay as the book
     gave them, and the viewer's own order or reading direction is the drawing's."""
     out = {}
-    cap = [ITEMS_MAX, ITEMS_MAX]                        # the things, and apart from them the quiet rows (they must not crowd a thing out)
-
-    taken = set()                                       # (day, task) already on the day: a second row of it is merged later and costs no place
+    order = []                                          # every entry in the order made; the cap is applied to what is left after rows are merged
 
     def put(entry):
-        i = 1 if _quiet(entry) else 0
-        k = (entry["date"], entry["source"], entry["id"])
-        if k in taken and entry["source"] == "organizer":
-            out.setdefault(entry["date"], []).append(entry)
-            return
-        if cap[i] > 0:
-            out.setdefault(entry["date"], []).append(entry)
-            cap[i] -= 1
-            taken.add(k)
+        out.setdefault(entry["date"], []).append(entry)
+        order.append(entry)
 
     start = dt.datetime.combine(first, dt.time(), local("2000-01-01").tzinfo)
     stop = dt.datetime.combine(last, dt.time(23, 59, 59), start.tzinfo)
     scheduled = set()
     for oid, item in book.now.items():
         rec = item["rec"]
-        if rec.get("type") == "task" and rec.get("status") == "open" and rec.get("event"):
-            scheduled.add(rec["event"])
+        if rec.get("type") == "task" and rec.get("status") == "open" and rec.get("event") and not (rec.get("deferred") or {}).get("until"):
+            scheduled.add(rec["event"])       # a task put off no longer stands for its event: Colony's is still where it was
     for oid, item in book.now.items():
         rec = item["rec"]
         if rec.get("type") != "task" or rec.get("aside") or (rec.get("locked") is not False and not locked_on):
@@ -224,7 +223,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                 obs[o.date()] = o
         if obs:
             sched = when(rec)
-            timed_due = _has_time(rec.get("due") or rec.get("remind"))
+            timed_due = _due_timed(rec)
             earliest = obs[min(obs)]
             for n, (day, da) in enumerate(sorted(obs.items())):
                 if first <= day <= last:
@@ -245,7 +244,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             # put off to a day not yet past: on the new day and time as normal, marked; the old day says where it went, quietly
             nd = until.date()
             new_timed = _has_time(d["until"])
-            old_timed = _has_time(rec.get("due") or rec.get("remind"))
+            old_timed = _due_timed(rec)
             if w is None:
                 moved_from = "Moved"
             elif w.date() != nd:
@@ -289,7 +288,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             if rec.get("attention") == "now" and first <= today <= last:
                 put(_entry("organizer", kind, key, title, today, question=q, **look))
             continue
-        timed = _has_time(rec.get("due") or rec.get("remind"))
+        timed = _due_timed(rec)
         if first <= w.date() <= last:
             put(_entry("organizer", kind, key, title, w.date(), _hm(w) if timed else "", question=q, **look))
         elif w.date() < today and first <= today <= last:
@@ -317,6 +316,14 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             day += dt.timedelta(days=1)
     for date, day in list(out.items()):
         out[date] = _one_row_each(day)
+    kept = {id(e) for day in out.values() for e in day}
+    cap = [ITEMS_MAX, ITEMS_MAX]                        # the things, and apart from them the quiet rows (they must not crowd a thing out)
+    out = {}
+    for e in order:
+        i = 1 if _quiet(e) else 0
+        if id(e) in kept and cap[i] > 0:
+            out.setdefault(e["date"], []).append(e)
+            cap[i] -= 1
     for day in out.values():
         day.sort(key=lambda x: (x["time"] == "", x["time"]))      # by time only: python's sort is stable, so a tie stays as the book gave it
     return out

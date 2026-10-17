@@ -59,7 +59,10 @@ struct DayRows: View {
     }
 
     /// The id the home scrolls to so Next is the first thing seen (earlier things sit above it).
-    var nextRowID: String? { day.simple.next.flatMap { n in day.rows.first { $0.id == n.id }?.id } }
+    var nextRowID: String? {
+        TieOrder.firstNext(day.simple, rightToLeft: UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft)
+            .flatMap { id in day.rows.first { $0.id == id }?.id }
+    }
 }
 
 

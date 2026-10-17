@@ -41,7 +41,8 @@ struct OrganizerHomeScreen: View {
     }
 
     private func scrollToNext(_ proxy: ScrollViewProxy) {
-        guard let day = store.answer?.day, let id = day.simple.next?.id, let row = day.rows.first(where: { $0.id == id }) else { return }
+        let rtl = UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft
+        guard let day = store.answer?.day, let id = TieOrder.firstNext(day.simple, rightToLeft: rtl), let row = day.rows.first(where: { $0.id == id }) else { return }
         withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { proxy.scrollTo(row.id, anchor: .top) }
     }
 
@@ -69,7 +70,8 @@ struct OrganizerHomeScreen: View {
     @ViewBuilder private var content: some View {
         if let day = store.answer?.day {
             DayRows(day: day, metrics: .home, bigNext: true, inlineQuestions: false, store: store, open: { _ in openDay() })
-            if day.simple.later.isEmpty && day.anytime.isEmpty && day.simple.next != nil {
+            // the quiet rows (where a thing went or was due) are the day view's: they are neither "something else today" nor a reason to say so
+            if day.simple.later.isEmpty && !day.anytime.contains(where: { !Pointer.isQuiet($0.state) }) && day.simple.next != nil {
                 Text("Nothing else today.").fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity).padding(.vertical, 6)
             }
             if let waiting = (day.rows + day.anytime).first(where: { $0.question != nil }) {
