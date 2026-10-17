@@ -27,6 +27,13 @@ enum ChatWords {
     static let lockedTitle = "Locked chat"
     static let needsPC = "Chats live on your PC. Connect it to chat here."
     static let connectPC = "Connect your PC"
+    /// Words for what this app calls itself in Aero's list of chat devices ("iPhone (browser)" is the page's, "iPhone (Aero app)" this app's).
+    static let deviceLabel = "iPhone (Aero app)"
+
+    /// This phone was refused as a chat device because the most is already there. Aero says the same words to the page.
+    static func devicesFull(_ count: Int) -> String {
+        "This phone can't be added: you have \(count > 0 ? "\(count) devices" : "too many devices"). Remove one in Devices."
+    }
 
     static func rowNote(_ unread: String?, locked: Bool) -> String? {
         [locked ? "Locked" : nil, unread].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
@@ -45,7 +52,9 @@ struct ChatStopped: Equatable {
     var next: String
     var key: String
     var action: Action
-    var text: String { "\(doing) stopped at \(step). \(next)" }
+    /// Said as it is instead of in the shape, for a stop that is the whole of what the person needs ("This phone can't be added: ...").
+    var words: String? = nil
+    var text: String { words ?? "\(doing) stopped at \(step). \(next)" }
 }
 
 enum ChatStep {
@@ -55,6 +64,7 @@ enum ChatStep {
     static let address = "finding Aero's address"
     static let phoneKeys = "reading it on this phone"
     static let answer = "Aero's answer"
+    static let devices = "adding this phone"
 }
 
 enum ChatStopWords {
@@ -77,6 +87,9 @@ enum ChatStopWords {
                 return ChatStopped(doing: doing, step: ChatStep.signingIn, next: "Open Aero to sign in, then try again.", key: "Try again", action: .retry)
             case .locked:
                 return ChatStopped(doing: doing, step: ChatStep.lock, next: "Unlock in Aero, then try again.", key: ChatWords.unlockKey, action: .unlock)
+            case .devicesFull(let count):
+                return ChatStopped(doing: doing, step: ChatStep.devices, next: "Remove one in Devices, then try again.", key: "Try again", action: .retry,
+                                   words: ChatWords.devicesFull(count))
             case .server:
                 return ChatStopped(doing: doing, step: ChatStep.answer, next: "Try again.", key: "Try again", action: .retry)
             case .unreadable:

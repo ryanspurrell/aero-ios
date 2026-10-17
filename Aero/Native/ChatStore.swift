@@ -111,6 +111,8 @@ final class ChatSession {
     private(set) var person = ""
     private var device: ChatDevice?
     private var registered = false
+    /// The id of the device a renewal put away, until Aero has been asked to take it out of the person's list.
+    private var replaced: String?
     /// Room keys opened on this phone, by "<room>|<epoch>". Kept in memory only; the sealed keys stay on the server.
     private(set) var keys: [String: SymmetricKey] = [:]
     /// Changes whenever the account changes or signs out; anything asked before the change is dropped when it answers.
@@ -135,6 +137,7 @@ final class ChatSession {
         flight = nil
         device = nil
         registered = false
+        replaced = nil
         keys = [:]
         me = ""
         person = ""
@@ -178,10 +181,16 @@ final class ChatSession {
             let kept = try ChatDeviceKeeper.device(for: person, in: keyStore)
             d = kept.device
             if kept.renewed { renewedKeys = true }
+            if let old = kept.replaced { replaced = old }
         }
         guard let d else { throw ChatKeyError.corrupt }
         if !registered {
-            try await api.register(device: d, label: "iPhone")
+            // The put-away device goes first: its keys are gone, so it is of no use to anyone, and while it stays it takes one of the
+            // eight places a new device needs. A network failure keeps it to try again; any other answer (it was never there) ends it.
+            if let old = replaced {
+                do { try await api.removeDevice(old); replaced = nil } catch is URLError { } catch { replaced = nil }
+            }
+            try await api.register(device: d, label: ChatWords.deviceLabel)
             guard g == generation else { throw ChatStale() }
             registered = true
         }

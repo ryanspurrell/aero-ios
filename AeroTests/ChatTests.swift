@@ -243,10 +243,41 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(ChatStopWords.make(doing: ChatStopWords.sending, error: ChatAPI.Failure.locked).key, "Unlock in Aero")
     }
 
+    // MARK: too many chat devices
+
+    func testARefusalForTooManyDevicesIsRecognisedWithItsNumber() {
+        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"error":"This phone can't be added: you have 8 devices. Remove one in Devices.","devices_full":8}"#.utf8)), .devicesFull(8))
+        // a number that could not be read is still this refusal
+        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"error":"x","devices_full":0}"#.utf8)), .devicesFull(0))
+        // any other refusal is still Aero's own words, and a sign-in problem is still one
+        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"error":"another"}"#.utf8)), .server("another"))
+        XCTAssertEqual(ChatAPI.failure(status: 403, data: Data()), .notSignedIn)
+        // an answer that says it succeeded is never taken for the refusal
+        XCTAssertNil(ChatAPI.failure(status: 200, data: Data(#"{"ok":true,"devices_full":8}"#.utf8)))
+    }
+
+    func testTooManyDevicesIsSaidAsItIsNotAsAerosAnswer() {
+        let s = ChatStopWords.make(doing: ChatStopWords.opening, error: ChatAPI.Failure.devicesFull(8))
+        XCTAssertEqual(s.text, "This phone can't be added: you have 8 devices. Remove one in Devices.")
+        XCTAssertFalse(s.text.contains("Aero's answer"))
+        XCTAssertEqual(s.action, .retry)
+        XCTAssertEqual(s.key, "Try again")
+        XCTAssertEqual(ChatStopWords.make(doing: ChatStopWords.sending, error: ChatAPI.Failure.devicesFull(0)).text,
+                       "This phone can't be added: you have too many devices. Remove one in Devices.")
+        // the others still come in the one shape
+        XCTAssertEqual(ChatStopWords.make(doing: ChatStopWords.opening, error: ChatAPI.Failure.server("x")).text,
+                       "Opening this chat stopped at Aero's answer. Try again.")
+    }
+
+    func testThisAppIsNamedAsAnAppInTheDevicesList() {
+        XCTAssertEqual(ChatWords.deviceLabel, "iPhone (Aero app)")
+        XCTAssertTrue(ChatWords.deviceLabel.count <= 40)
+    }
+
     func testNoWordOfChatHasAnEmoji() {
         let words: [String] = [ChatWords.tab, ChatWords.listTitle, ChatWords.newChat, ChatWords.empty, ChatWords.composerPrompt, ChatWords.send, ChatWords.stop,
                                ChatWords.back, ChatWords.startTitle, ChatWords.startNote, ChatWords.lockedNeedsUnlock, ChatWords.unlockKey, ChatWords.lockedShut,
-                               ChatWords.waitingForKeys, ChatWords.lockedTitle, ChatOpener.beforeYouJoined, ChatOpener.notVerified, ChatOpener.notOpened,
+                               ChatWords.waitingForKeys, ChatWords.lockedTitle, ChatWords.deviceLabel, ChatWords.devicesFull(8), ChatWords.devicesFull(0), ChatOpener.beforeYouJoined, ChatOpener.notVerified, ChatOpener.notOpened,
                                ChatPrivacy.open.line, ChatPrivacy.locked.line]
         for w in words {
             for scalar in w.unicodeScalars { XCTAssertFalse(scalar.properties.isEmojiPresentation, w) }

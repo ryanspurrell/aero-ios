@@ -267,7 +267,40 @@ final class ChatVectorTests: XCTestCase {
         try store.save(Data(old.utf8), person: "p1")
         let got = try ChatDeviceKeeper.device(for: "p1", in: store)
         XCTAssertFalse(got.renewed)
+        XCTAssertNil(got.replaced)
         XCTAssertEqual(got.device.ecdhPublic, ChatBase64.encode(e.publicKey.x963Representation))
+    }
+
+    func testAKeptDeviceFromTheEarlierBuildIsRenewedAndNamesTheOneItPutAway() throws {
+        guard SecureEnclave.isAvailable else { throw XCTSkip("renewing happens only where there is a Secure Enclave (a phone, not the simulator)") }
+        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
+        let old = #"{"id":"AAECAwQFBgcICQoL","ecdh":"\#(ChatBase64.encode(e.rawRepresentation))","sign":"\#(ChatBase64.encode(s.rawRepresentation))"}"#
+        let store = MemoryChatKeyStore()
+        try store.save(Data(old.utf8), person: "p1")
+        let got = try ChatDeviceKeeper.device(for: "p1", in: store)
+        XCTAssertTrue(got.renewed)
+        // the entry Aero still holds for the old device is named, so it can be taken out of the person's list
+        XCTAssertEqual(got.replaced, "AAECAwQFBgcICQoL")
+        XCTAssertNotEqual(got.device.id, "AAECAwQFBgcICQoL")
+        // and it is only named once: the next time the new one is simply kept
+        let again = try ChatDeviceKeeper.device(for: "p1", in: store)
+        XCTAssertFalse(again.renewed)
+        XCTAssertNil(again.replaced)
+        XCTAssertEqual(again.device.id, got.device.id)
+    }
+
+    func testRestoringAnOldDeviceOnAPhoneWithASecureEnclaveSaysWhichOneToReplace() throws {
+        // the pure part, which runs anywhere: what `restore` answers for a legacy record
+        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
+        let old = #"{"id":"AAECAwQFBgcICQoL","ecdh":"\#(ChatBase64.encode(e.rawRepresentation))","sign":"\#(ChatBase64.encode(s.rawRepresentation))"}"#
+        switch try ChatDevice.restore(person: "p1", from: Data(old.utf8)) {
+        case .renew(let id):
+            XCTAssertTrue(SecureEnclave.isAvailable)
+            XCTAssertEqual(id, "AAECAwQFBgcICQoL")
+        case .device(let d):
+            XCTAssertFalse(SecureEnclave.isAvailable)
+            XCTAssertEqual(d.id, "AAECAwQFBgcICQoL")
+        }
     }
 
     // MARK: cookies, the account and Locked

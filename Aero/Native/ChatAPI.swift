@@ -11,7 +11,8 @@ import WebKit
 ///   GET  rooms/<id>/busy                  whether a reply is being written now
 ///   GET  rooms/people.json                the models a new chat may use
 ///   GET  devices.json?people=a,b          public keys of devices, to seal a new chat's key to
-///   POST devices                          this phone as a device {device, ecdh, sign, label}
+///   POST devices                          this phone as a device {device, ecdh, sign, label}; refused with {"error", "devices_full": n} at the most
+///   POST devices/remove                   one of this person's own devices {device}, taken out of their list
 ///   POST rooms/new                        a new chat {device, room, name, members, seals, private}
 ///   POST rooms/<id>/send                  a sealed message {device, epoch, mentions, iv, ct, sig}
 ///   POST rooms/<id>/read                  read up to {seq}
@@ -20,6 +21,9 @@ import WebKit
 final class ChatAPI {
     enum Failure: Error, Equatable {
         case noAddress, notSignedIn, locked
+        /// Aero refused this phone as a chat device because the person already has the most (Messages keeps eight): how many they have
+        /// (0 when it was not said). Their own list is in Aero's Devices page, where one can be removed.
+        case devicesFull(Int)
         case server(String)
         case unreadable
     }
@@ -85,9 +89,13 @@ final class ChatAPI {
 
     /// What the server said when it refused: the Locked answer, a sign-in problem, or its own words.
     static func failure(status: Int, data: Data) -> Failure? {
-        struct Said: Decodable { var error: String?; var locked: Bool? }
+        struct Said: Decodable {
+            var error: String?; var locked: Bool?; var devicesFull: Int?
+            enum CodingKeys: String, CodingKey { case error, locked; case devicesFull = "devices_full" }
+        }
         let said = try? JSONDecoder().decode(Said.self, from: data)
         if said?.locked == true { return .locked }
+        if status >= 400, let full = said?.devicesFull { return .devicesFull(full) }
         if status == 401 || status == 403 { return .notSignedIn }
         if status >= 400 { return .server(said?.error ?? "That didn't work. Try again.") }
         return nil
@@ -151,6 +159,13 @@ final class ChatAPI {
     func register(device: ChatDevice, label: String) async throws {
         struct Body: Encodable { var device: String; var ecdh: String; var sign: String; var label: String }
         _ = try await post("devices", Body(device: device.id, ecdh: device.ecdhPublic, sign: device.signPublic, label: label))
+    }
+
+    /// Take one of this person's own devices out of their list in Aero (the entry a renewal put away). Never another person's: Aero answers
+    /// 404 for an id that is not in the signed-in person's list.
+    func removeDevice(_ id: String) async throws {
+        struct Body: Encodable { var device: String }
+        _ = try await post("devices/remove", Body(device: id))
     }
 
     struct NewRoom: Encodable {

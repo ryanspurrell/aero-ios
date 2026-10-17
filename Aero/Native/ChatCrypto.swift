@@ -105,7 +105,8 @@ struct ChatDevice {
     enum Restored {
         case device(ChatDevice)
         /// A device kept by an earlier build (raw keys, no Secure Enclave) on a phone that has a Secure Enclave: it is to be replaced, not used.
-        case renew
+        /// `replacing` is its id, which Aero still lists as one of this person's devices until it is removed.
+        case renew(replacing: String)
     }
 
     /// The device that was kept. Throws, and never returns a different one, when what is kept cannot be read as a device. Raw (software) keys
@@ -124,7 +125,7 @@ struct ChatDevice {
         do {
             switch kind {
             case "software":
-                if SecureEnclave.isAvailable { return .renew }
+                if SecureEnclave.isAvailable { return .renew(replacing: id) }
                 return .device(software(person: person, id: id, ecdh: try P256.KeyAgreement.PrivateKey(rawRepresentation: e), sign: try P256.Signing.PrivateKey(rawRepresentation: s)))
             case "enclave":
                 return .device(enclave(person: person, id: id, ecdh: try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: e), sign: try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: s)))
@@ -395,19 +396,21 @@ enum ChatDeviceKeeper {
     /// This phone's device for `person`, and whether it was just renewed. The one kept; or, only when nothing at all is kept, a new one made and
     /// kept before it is used; or, when an earlier build kept raw keys on a phone that has a Secure Enclave, a new Secure Enclave device kept in
     /// its place (`renewed`, which the person is told, and which is registered like any new device). A failed read or a kept device that
-    /// cannot be read throws; it is never replaced.
-    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> (device: ChatDevice, renewed: Bool) {
+    /// cannot be read throws; it is never replaced. `replaced` is the id of the device a renewal put away: its keys are gone, so the entry Aero
+    /// holds for it is of no use to anyone and is taken out of the person's list (ChatSession.ensureDevice) instead of staying in it
+    /// counting towards the most a person may have.
+    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> (device: ChatDevice, renewed: Bool, replaced: String?) {
         if let data = try store.load(person: person) {
             switch try ChatDevice.restore(person: person, from: data) {
-            case .device(let d): return (d, false)
-            case .renew:
+            case .device(let d): return (d, false, nil)
+            case .renew(let old):
                 let made = try ChatDevice.make(person: person)
                 try store.save(try made.kept(), person: person)
-                return (made, true)
+                return (made, true, old)
             }
         }
         let made = try ChatDevice.make(person: person)
         try store.save(try made.kept(), person: person)
-        return (made, false)
+        return (made, false, nil)
     }
 }
