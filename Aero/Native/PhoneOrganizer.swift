@@ -111,7 +111,7 @@ final class PhoneOrganizer: OrganizerBackend {
                 if case .number(let n)? = rec["done_count"] { rec["done_count"] = .number(n + 1) } else { rec["done_count"] = .number(1) }
                 why = "done for \(at)"
             } else {
-                rec["status"] = .string("done"); rec["done_at"] = .string(shown(clock())); why = "done"
+                rec["status"] = .string("done"); observeDone(&rec); why = "done"
             }
         case "reopen":
             rec["status"] = .string(firstStatus(type))
@@ -122,7 +122,10 @@ final class PhoneOrganizer: OrganizerBackend {
         default:    // update
             let fields = args.filter { $0.key != "id" && $0.key != "rev" }
             let cleaned = try await reader.call("clean", ["fields": .object(fields)])
+            let wasDone = rec["status"]?.stringValue == "done"
             for (k, v) in cleaned.objectValue ?? [:] { rec[k] = v }
+            // edited to done: the same observation Complete makes, with its time
+            if type == "task", rec["repeat"]?.stringValue?.isEmpty != false, rec["status"]?.stringValue == "done", !wasDone { observeDone(&rec) }
             why = "changed"
             try await answered(before: before.rec, rec: &rec)
         }
@@ -130,6 +133,16 @@ final class PhoneOrganizer: OrganizerBackend {
         rec["basis"] = .object(["status": .string("said"), "by": .string(Self.person)])
         try store.put(oid: oid, rec: rec, by: Self.person, why: why, replaces: before.id)
         refreshRemindersInBackground()
+    }
+
+    /// Done is a dated observation that accumulates (organizer_service.py `observe_done`): `done_ats` holds every time it was marked done,
+    /// `done_at` the latest. Completing again adds one and never replaces the first.
+    private func observeDone(_ rec: inout [String: JSONValue]) {
+        let at = JSONValue.string(shown(clock()))
+        var seen = rec["done_ats"]?.arrayValue ?? (rec["done_at"].map { [$0] } ?? [])
+        seen.append(at)
+        rec["done_ats"] = .array(seen)
+        rec["done_at"] = at
     }
 
     /// A line quick add was not sure of is answered when the person sets its time: choosing one of the kept readings is an `update`

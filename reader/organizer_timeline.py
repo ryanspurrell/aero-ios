@@ -124,6 +124,28 @@ def _has_time(text):
     return len(t) > 10 and t[11:16] != "00:00"
 
 
+def _one_row_each(day):
+    """A thing is on a day once. Where one task has two rows on one day (done and then reopened, or an open place and a done one), the open
+    row stays and says it was done earlier; else the done row stays; a quiet row gives way to either. Nothing is dropped from another day."""
+    rank = lambda e: 2 if e["state"] not in ("done",) + QUIET else 1 if e["state"] == "done" else 0
+    keep, out = {}, []
+    for e in day:
+        k = (e["source"], e["id"]) if e["source"] == "organizer" else None
+        if k is None or k not in keep:
+            if k:
+                keep[k] = e
+            out.append(e)
+            continue
+        old = keep[k]
+        win, lose = (e, old) if rank(e) > rank(old) else (old, e)
+        if lose["state"] == "done" and win["state"] not in ("done",) + QUIET:
+            win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], "Done earlier, then reopened") if x)
+        if win is e:
+            out[out.index(old)] = e
+            keep[k] = e
+    return out
+
+
 def entries_between(book, first, last, today, locked_on, local, when, events, lists):
     """(A thing's colour is data its owner keeps and every surface draws as given: a list's colour, a kind's colour the person set (or
     the default above), a calendar event's own calendar colour from Colony, a hex value. Nothing draws a colour of its own.)
@@ -138,12 +160,13 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
     "was_due", "Done later, on <day>", and its done row says "Was due <day>". Within a time no order is made: the entries stay as the book
     gave them, and the viewer's own order or reading direction is the drawing's."""
     out = {}
-    cap = [ITEMS_MAX]
+    cap = [ITEMS_MAX, ITEMS_MAX]                        # the things, and apart from them the quiet rows (they must not crowd a thing out)
 
     def put(entry):
-        if cap[0] > 0:
+        i = 1 if _quiet(entry) else 0
+        if cap[i] > 0:
             out.setdefault(entry["date"], []).append(entry)
-            cap[0] -= 1
+            cap[i] -= 1
 
     start = dt.datetime.combine(first, dt.time(), local("2000-01-01").tzinfo)
     stop = dt.datetime.combine(last, dt.time(23, 59, 59), start.tzinfo)
@@ -164,9 +187,8 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         look = {"color": proj.get("color") if proj.get("color") else None, "icon": proj.get("icon") if proj.get("icon") else None}
         d = rec.get("deferred") or {}
         until = local(d["until"]) if d.get("until") else None
-        if rec.get("repeat") and until and until > local(today.isoformat() + " 00:00"):
-            continue                                             # a repeating task put off: as before (not in this requirement)
-        ahead = bool(until) and until.date() >= today and rec.get("status") == "open"
+        held = bool(rec.get("repeat") and until and until > local(today.isoformat() + " 00:00"))   # a repeating task put off: its open times wait
+        ahead = bool(until) and rec.get("status") == "open" and not rec.get("repeat")
         kind = "buy" if rec.get("type") == "buy" else "repeat" if rec.get("repeat") else "task"
         q = question_of(oid, rec)
         key = oid[:8]
@@ -179,26 +201,34 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             done_until = local(rec.get("done_until")) if rec.get("done_until") else None
             for o in times:
                 ticked = bool(done_until and o <= done_until)
-                if o.date() < today and not ticked:
+                if (o.date() < today or held) and not ticked:
                     continue                                     # a past time nobody ticked: not claimed either way
                 put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (o.hour or o.minute) else "", state="done" if ticked else "open",
                            done_at=_hm(done_until) if ticked and done_until and done_until.date() == o.date() and (done_until.hour or done_until.minute) else "",
                            repeat=True, question=q, **look))
             continue
-        if rec.get("status") == "done":
-            da = local(rec.get("done_at")) if rec.get("done_at") else None
-            sched = when(rec) if da else None
-            other = bool(sched) and sched.date() != da.date()     # due one day, done another
-            if da and first <= da.date() <= last:
-                at = _hm(sched) if sched and _has_time(rec.get("due") or rec.get("remind")) and sched.date() == da.date() else _hm(da)
-                was = ("%s %s" % ("Was due" if sched < da else "Due", day_words(sched.date(), today))) if other else ""
-                put(_entry("organizer", kind, key, title, da.date(), at, state="done", done_at=_hm(da), mark="due_then_done" if other else "",
-                           mark_text=was, **look))
-            if other and first <= sched.date() <= last:
-                put(_entry("organizer", kind, key, title, sched.date(), _hm(sched) if _has_time(rec.get("due") or rec.get("remind")) else "",
-                           state="was_due", mark="due_then_done",
-                           mark_text="Done %s, on %s" % ("later" if sched < da else "earlier", day_words(da.date(), today)), **look))
-            continue
+        # done is a dated observation that accumulates (Aryn, 2026-10-17): every one is on its own day, faded; a task never loses one
+        obs = {}
+        for x in rec.get("done_ats") or ([rec["done_at"]] if rec.get("done_at") else []):
+            o = local(x)
+            if o and (o.date() not in obs or o > obs[o.date()]):
+                obs[o.date()] = o
+        if obs:
+            sched = when(rec)
+            timed_due = _has_time(rec.get("due") or rec.get("remind"))
+            earliest = obs[min(obs)]
+            for n, (day, da) in enumerate(sorted(obs.items())):
+                if first <= day <= last:
+                    other = bool(sched) and sched.date() != day            # due one day, done another
+                    at = _hm(sched) if sched and timed_due and sched.date() == day else _hm(da)
+                    was = ("%s %s" % ("Was due" if sched < da else "Due", day_words(sched.date(), today))) if other and n == 0 else "Done again" if n else ""
+                    put(_entry("organizer", kind, key, title, day, at, state="done", done_at=_hm(da), mark="due_then_done" if other and n == 0 else "",
+                               mark_text=was, **look))
+            if sched and sched.date() not in obs and first <= sched.date() <= last:
+                put(_entry("organizer", kind, key, title, sched.date(), _hm(sched) if timed_due else "", state="was_due", mark="due_then_done",
+                           mark_text="Done %s, on %s" % ("later" if sched < earliest else "earlier", day_words(earliest.date(), today)), **look))
+            if rec.get("status") == "done":
+                continue
         if rec.get("status") != "open":
             continue
         w = when(rec)
@@ -216,6 +246,10 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             if first <= nd <= last:
                 put(_entry("organizer", kind, key, title, nd, _hm(until) if new_timed else "", question=q, mark="moved_from",
                            mark_text=moved_from, **look))
+            if nd < today and first <= today <= last:
+                # the new day has passed and it is still open: behind, from where it was moved to (not from where it was first due)
+                put(_entry("organizer", kind, key, title, today, state="overdue", since=nd.isoformat(), mark="moved_from", mark_text=moved_from,
+                           question=q, **look))
             if w is not None and w.date() != nd and first <= w.date() <= last:
                 where = day_words(nd, today) + (" " + clock_text(_hm(until)) if new_timed else "")
                 put(_entry("organizer", kind, key, title, w.date(), _hm(w) if old_timed else "", state="moved", mark="moved_to",
@@ -268,6 +302,8 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                        time=s[11:16] if timed else "", end=e[11:16] if timed and e[:10] == s[:10] and len(e) >= 16 else "",
                        all_day=all_day or not timed, ref=ref, color=ev.get("colour") or None))
             day += dt.timedelta(days=1)
+    for date, day in list(out.items()):
+        out[date] = _one_row_each(day)
     for day in out.values():
         day.sort(key=lambda x: (x["time"] == "", x["time"]))      # by time only: python's sort is stable, so a tie stays as the book gave it
     return out
