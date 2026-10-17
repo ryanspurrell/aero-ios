@@ -252,24 +252,31 @@ final class ChatVectorTests: XCTestCase {
 
     func testTheDeviceIsMadeOnlyWhenNothingIsKeptAndComesBackTheSame() throws {
         let store = MemoryChatKeyStore()
-        let first = try ChatDeviceKeeper.device(for: "p1", in: store).device
-        let again = try ChatDeviceKeeper.device(for: "p1", in: store).device
+        let first = try ChatDeviceKeeper.device(for: "p1", in: store)
+        let again = try ChatDeviceKeeper.device(for: "p1", in: store)
         XCTAssertEqual(first.id, again.id)
         XCTAssertEqual(first.ecdhPublic, again.ecdhPublic)
         XCTAssertEqual(first.signPublic, again.signPublic)
-        XCTAssertNotEqual(try ChatDeviceKeeper.device(for: "p2", in: store).device.id, first.id)
+        XCTAssertNotEqual(try ChatDeviceKeeper.device(for: "p2", in: store).id, first.id)
     }
 
-    func testAKeptDeviceFromTheEarlierBuildStillWorksWhereThereIsNoSecureEnclave() throws {
-        guard !SecureEnclave.isAvailable else { throw XCTSkip("a phone with a Secure Enclave renews it instead") }
+    private func legacyRecord(_ e: P256.KeyAgreement.PrivateKey, _ s: P256.Signing.PrivateKey) -> Data {
+        Data(#"{"id":"AAECAwQFBgcICQoL","ecdh":"\#(ChatBase64.encode(e.rawRepresentation))","sign":"\#(ChatBase64.encode(s.rawRepresentation))"}"#.utf8)
+    }
+
+    func testADeviceFromTheEarlierBuildIsKeptAsItIsEvenWhereThereIsASecureEnclave() throws {
+        // replacing it here would close for good any chat only it could open: it is moved only by ChatSession, when Aero says nothing is lost
         let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
-        let old = #"{"id":"AAECAwQFBgcICQoL","ecdh":"\#(ChatBase64.encode(e.rawRepresentation))","sign":"\#(ChatBase64.encode(s.rawRepresentation))"}"#
+        let record = legacyRecord(e, s)
         let store = MemoryChatKeyStore()
-        try store.save(Data(old.utf8), person: "p1")
+        try store.save(record, person: "p1")
         let got = try ChatDeviceKeeper.device(for: "p1", in: store)
-        XCTAssertFalse(got.renewed)
-        XCTAssertNil(got.replaced)
-        XCTAssertEqual(got.device.ecdhPublic, ChatBase64.encode(e.publicKey.x963Representation))
+        XCTAssertEqual(got.id, "AAECAwQFBgcICQoL")
+        XCTAssertEqual(got.ecdhPublic, ChatBase64.encode(e.publicKey.x963Representation))
+        XCTAssertTrue(got.isSoftware)
+        XCTAssertEqual(got.canMoveToEnclave, SecureEnclave.isAvailable)
+        XCTAssertEqual(try store.load(person: "p1"), record)
+        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
     }
 
     func testThePutAwayDevicesIdIsKeptUntilAeroHasTakenItOut() throws {
@@ -281,42 +288,25 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertNil(ChatReplaced.pending(person: "p2", in: store))
         // it is not mistaken for the person's own device
         XCTAssertNil(try store.load(person: "p1"))
-        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).replaced, nil)
         ChatReplaced.clear(person: "p1", in: store)
         XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
     }
 
-    func testAKeptDeviceFromTheEarlierBuildIsRenewedAndNamesTheOneItPutAway() throws {
-        guard SecureEnclave.isAvailable else { throw XCTSkip("renewing happens only where there is a Secure Enclave (a phone, not the simulator)") }
+    func testReplacingKeepsTheOldIdAndThenTheNewDevice() throws {
         let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
-        let old = #"{"id":"AAECAwQFBgcICQoL","ecdh":"\#(ChatBase64.encode(e.rawRepresentation))","sign":"\#(ChatBase64.encode(s.rawRepresentation))"}"#
         let store = MemoryChatKeyStore()
-        try store.save(Data(old.utf8), person: "p1")
-        let got = try ChatDeviceKeeper.device(for: "p1", in: store)
-        XCTAssertTrue(got.renewed)
-        // the entry Aero still holds for the old device is named, so it can be taken out of the person's list
-        XCTAssertEqual(got.replaced, "AAECAwQFBgcICQoL")
+        try store.save(legacyRecord(e, s), person: "p1")
+        let old = try ChatDeviceKeeper.device(for: "p1", in: store)
+        let fresh = Self.softFresh("p1")
+        try ChatDeviceKeeper.replace(old, with: fresh, in: store)
+        // the new device is the one kept from now on, and the old id waits to be taken out
+        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, fresh.id)
         XCTAssertEqual(ChatReplaced.pending(person: "p1", in: store), "AAECAwQFBgcICQoL")
-        XCTAssertNotEqual(got.device.id, "AAECAwQFBgcICQoL")
-        // and it is only named once: the next time the new one is simply kept
-        let again = try ChatDeviceKeeper.device(for: "p1", in: store)
-        XCTAssertFalse(again.renewed)
-        XCTAssertNil(again.replaced)
-        XCTAssertEqual(again.device.id, got.device.id)
+        XCTAssertNil(ChatReplaced.pending(person: "p2", in: store))
     }
 
-    func testRestoringAnOldDeviceOnAPhoneWithASecureEnclaveSaysWhichOneToReplace() throws {
-        // the pure part, which runs anywhere: what `restore` answers for a legacy record
-        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
-        let old = #"{"id":"AAECAwQFBgcICQoL","ecdh":"\#(ChatBase64.encode(e.rawRepresentation))","sign":"\#(ChatBase64.encode(s.rawRepresentation))"}"#
-        switch try ChatDevice.restore(person: "p1", from: Data(old.utf8)) {
-        case .renew(let id):
-            XCTAssertTrue(SecureEnclave.isAvailable)
-            XCTAssertEqual(id, "AAECAwQFBgcICQoL")
-        case .device(let d):
-            XCTAssertFalse(SecureEnclave.isAvailable)
-            XCTAssertEqual(d.id, "AAECAwQFBgcICQoL")
-        }
+    static func softFresh(_ person: String) -> ChatDevice {
+        ChatDevice.software(person: person, id: "ZZZZZZZZZZZZ", ecdh: P256.KeyAgreement.PrivateKey(), sign: P256.Signing.PrivateKey())
     }
 
     // MARK: cookies, the account and Locked

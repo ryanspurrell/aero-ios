@@ -62,12 +62,19 @@ struct ChatDevice {
     let agree: (P256.KeyAgreement.PublicKey) throws -> SharedSecret
     let signRaw: (Data) throws -> Data
     private let keptData: () throws -> Data
+    /// Raw keys kept in the Keychain (made by an earlier build, or where there is no Secure Enclave), not Secure Enclave keys.
+    let isSoftware: Bool
 
     init(person: String, id: String, ecdhPublic: String, signPublic: String,
-         agree: @escaping (P256.KeyAgreement.PublicKey) throws -> SharedSecret, signRaw: @escaping (Data) throws -> Data, kept: @escaping () throws -> Data) {
+         agree: @escaping (P256.KeyAgreement.PublicKey) throws -> SharedSecret, signRaw: @escaping (Data) throws -> Data, kept: @escaping () throws -> Data,
+         isSoftware: Bool = false) {
         self.person = person; self.id = id; self.ecdhPublic = ecdhPublic; self.signPublic = signPublic
-        self.agree = agree; self.signRaw = signRaw; self.keptData = kept
+        self.agree = agree; self.signRaw = signRaw; self.keptData = kept; self.isSoftware = isSoftware
     }
+
+    /// A device made by an earlier build with raw keys, on a phone that has a Secure Enclave: it keeps working as it is, and is moved to
+    /// the Secure Enclave only by `ChatSession` when that loses nothing (see `ChatSession.renewIfSafe`).
+    var canMoveToEnclave: Bool { isSoftware && SecureEnclave.isAvailable }
 
     /// What is kept on the phone: the id and an opaque or raw form of each key, tagged with which.
     private struct Kept: Codable { var v: Int; var id: String; var kind: String; var ecdh: String; var sign: String }
@@ -79,7 +86,8 @@ struct ChatDevice {
                    ecdhPublic: ChatBase64.encode(ecdh.publicKey.x963Representation), signPublic: ChatBase64.encode(sign.publicKey.x963Representation),
                    agree: { try ecdh.sharedSecretFromKeyAgreement(with: $0) },
                    signRaw: { try sign.signature(for: $0).rawRepresentation },
-                   kept: { try JSONEncoder().encode(Kept(v: 1, id: id, kind: "software", ecdh: ChatBase64.encode(ecdh.rawRepresentation), sign: ChatBase64.encode(sign.rawRepresentation))) })
+                   kept: { try JSONEncoder().encode(Kept(v: 1, id: id, kind: "software", ecdh: ChatBase64.encode(ecdh.rawRepresentation), sign: ChatBase64.encode(sign.rawRepresentation))) },
+                   isSoftware: true)
     }
 
     static func enclave(person: String, id: String, ecdh: SecureEnclave.P256.KeyAgreement.PrivateKey, sign: SecureEnclave.P256.Signing.PrivateKey) -> ChatDevice {
@@ -101,16 +109,13 @@ struct ChatDevice {
         return software(person: person, id: id, ecdh: P256.KeyAgreement.PrivateKey(), sign: P256.Signing.PrivateKey())
     }
 
-    /// What `restore` found.
+    /// What `restore` found: the device that was kept, which is used as it is (raw keys too, on a phone with a Secure Enclave: they are moved
+    /// to it only when that loses nothing, never by replacing them here).
     enum Restored {
         case device(ChatDevice)
-        /// A device kept by an earlier build (raw keys, no Secure Enclave) on a phone that has a Secure Enclave: it is to be replaced, not used.
-        /// `replacing` is its id, which Aero still lists as one of this person's devices until it is removed.
-        case renew(replacing: String)
     }
 
-    /// The device that was kept. Throws, and never returns a different one, when what is kept cannot be read as a device. Raw (software) keys
-    /// are used only where there is no Secure Enclave; where there is one they are reported as to be renewed.
+    /// The device that was kept. Throws, and never returns a different one, when what is kept cannot be read as a device.
     static func restore(person: String, from data: Data) throws -> Restored {
         struct Legacy: Codable { var id: String; var ecdh: String; var sign: String }
         var kind = "", id = "", ecdhText = "", signText = ""
@@ -125,7 +130,6 @@ struct ChatDevice {
         do {
             switch kind {
             case "software":
-                if SecureEnclave.isAvailable { return .renew(replacing: id) }
                 return .device(software(person: person, id: id, ecdh: try P256.KeyAgreement.PrivateKey(rawRepresentation: e), sign: try P256.Signing.PrivateKey(rawRepresentation: s)))
             case "enclave":
                 return .device(enclave(person: person, id: id, ecdh: try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: e), sign: try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: s)))
@@ -420,27 +424,25 @@ enum ChatReplaced {
 }
 
 enum ChatDeviceKeeper {
-    /// This phone's device for `person`, and whether it was just renewed. The one kept; or, only when nothing at all is kept, a new one made and
-    /// kept before it is used; or, when an earlier build kept raw keys on a phone that has a Secure Enclave, a new Secure Enclave device kept in
-    /// its place (`renewed`, which the person is told, and which is registered like any new device). A failed read or a kept device that
-    /// cannot be read throws; it is never replaced. `replaced` is the id of the device a renewal put away: its keys are gone, so the entry Aero
-    /// holds for it is of no use to anyone and is taken out of the person's list (ChatSession.ensureDevice) instead of staying in it
-    /// counting towards the most a person may have.
-    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> (device: ChatDevice, renewed: Bool, replaced: String?) {
+    /// This phone's device for `person`: the one kept, or, only when nothing at all is kept, a new one made and kept before it is used. A
+    /// failed read or a kept device that cannot be read throws; it is never replaced. A device made by an earlier build (raw keys) is
+    /// kept as it is even where there is a Secure Enclave: replacing it here would leave the chats only it could open closed for good.
+    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> ChatDevice {
         if let data = try store.load(person: person) {
             switch try ChatDevice.restore(person: person, from: data) {
-            case .device(let d): return (d, false, nil)
-            case .renew(let old):
-                let made = try ChatDevice.make(person: person)
-                // the old id is kept first: if the app stops between the two, the new device is made again from the old one's
-                // record (still there) and the id is still known
-                try ChatReplaced.remember(old, person: person, in: store)
-                try store.save(try made.kept(), person: person)
-                return (made, true, old)
+            case .device(let d): return d
             }
         }
         let made = try ChatDevice.make(person: person)
         try store.save(try made.kept(), person: person)
-        return (made, false, nil)
+        return made
+    }
+
+    /// Put `fresh` in the place of `old`: the old id is kept first (so a restart still knows which entry in Aero's list is to be taken
+    /// out), then the new device is kept. Called only after `fresh` is registered with Aero and `old` has been found to be the only holder
+    /// of nothing.
+    static func replace(_ old: ChatDevice, with fresh: ChatDevice, in store: ChatKeyStore) throws {
+        try ChatReplaced.remember(old.id, person: old.person, in: store)
+        try store.save(try fresh.kept(), person: old.person)
     }
 }

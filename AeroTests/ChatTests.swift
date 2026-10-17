@@ -269,14 +269,21 @@ final class ChatTests: XCTestCase {
                        "Opening this chat stopped at Aero's answer. Try again.")
     }
 
-    func testRemovingADeviceSaysWhetherLosingItsChatsIsKnown() throws {
+    func testRemovingADeviceSendsNoAcknowledgementOfItsOwn() throws {
         func json(_ body: ChatAPI.RemoveBody) throws -> [String: Any] {
             try JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any] ?? [:]
         }
-        let plain = try json(ChatAPI.RemoveBody(device: "abc12345", loseHistory: false))
+        // the app removes only a device it found holds nothing alone, so it never says "remove it anyway"
+        let plain = try json(ChatAPI.RemoveBody(device: "abc12345"))
         XCTAssertEqual(plain["device"] as? String, "abc12345")
-        XCTAssertEqual(plain["lose_history"] as? Bool, false)
-        XCTAssertEqual(try json(ChatAPI.RemoveBody(device: "abc12345", loseHistory: true))["lose_history"] as? Bool, true)
+        XCTAssertNil(plain["ack"])
+        XCTAssertNil(plain["lose_history"])
+    }
+
+    func testWhatADeviceHoldsAloneDecodes() throws {
+        struct Answer: Decodable { var holds: ChatAPI.Holds }
+        let got = try JSONDecoder().decode(Answer.self, from: Data(#"{"ok":true,"holds":{"rooms":2,"epochs":3}}"#.utf8))
+        XCTAssertEqual(got.holds, ChatAPI.Holds(rooms: 2, epochs: 3))
     }
 
     func testADeviceAeroDoesNotListIsAlreadyGone() {

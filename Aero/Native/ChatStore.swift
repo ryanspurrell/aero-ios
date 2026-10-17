@@ -173,33 +173,44 @@ final class ChatSession {
     func ensureDevice() async throws -> ChatDevice {
         if person.isEmpty { _ = try await loadRooms() }
         let g = generation
-        var d = device
-        let firstThisLaunch = d == nil
-        if d == nil {
-            let kept = try ChatDeviceKeeper.device(for: person, in: keyStore)
-            d = kept.device
-            if kept.renewed { renewedKeys = true }
-        }
-        guard let d else { throw ChatKeyError.corrupt }
+        let firstThisLaunch = device == nil
+        var current: ChatDevice
+        if let have = device { current = have } else { current = try ChatDeviceKeeper.device(for: person, in: keyStore) }
         if !registered {
-            try await api.register(device: d, label: ChatWords.deviceLabel)
+            try await api.register(device: current, label: ChatWords.deviceLabel)
             guard g == generation else { throw ChatStale() }
             registered = true
         }
-        device = d
+        if firstThisLaunch, let moved = await renewIfSafe(current) { current = moved }
+        device = current
         if firstThisLaunch { await takeOutReplaced() }
-        return d
+        return current
     }
 
-    /// The device a renewal put away, taken out of the person's list once the new one is registered (never before: if registering
-    /// failed, nothing is lost by it still being there). Its keys are gone, so what is locked to it can be opened by nobody and it
-    /// only takes up one of the eight places; Aero is told so (`loseHistory`). The id stays kept until Aero has answered, through a
-    /// restart too, and is tried again the next time.
+    /// A device made by an earlier build with raw keys, on a phone with a Secure Enclave, is moved to the Secure Enclave, but only
+    /// when nothing is lost by it, in this order: (1) Aero says nothing is held by it alone (a chat whose key only it has would close for
+    /// good, since the new keys cannot open it); (2) the new device is registered, which if the eight places are taken is refused and
+    /// leaves the old one as it is; (3) only then the new keys are kept in its place. The old entry is taken out afterwards
+    /// (`takeOutReplaced`). Anything that goes wrong along the way leaves the old device in use, and it is asked again at the next launch.
+    private func renewIfSafe(_ old: ChatDevice) async -> ChatDevice? {
+        guard old.canMoveToEnclave else { return nil }
+        let g = generation
+        guard let holds = try? await api.holds(old.id), holds.epochs == 0, g == generation else { return nil }
+        guard let fresh = try? ChatDevice.make(person: person), !fresh.isSoftware else { return nil }
+        do { try await api.register(device: fresh, label: ChatWords.deviceLabel) } catch { return nil }
+        guard g == generation, (try? ChatDeviceKeeper.replace(old, with: fresh, in: keyStore)) != nil else { return nil }
+        renewedKeys = true
+        return fresh
+    }
+
+    /// The device a renewal put away, taken out of the person's list once the new one is registered and kept (`renewIfSafe` found it
+    /// held nothing alone, so Aero takes it out without a warning; if it still refuses, it stays and nothing is lost). The id stays kept
+    /// until Aero has answered, through a restart too, and is tried again at the next launch.
     private func takeOutReplaced() async {
         guard let old = ChatReplaced.pending(person: person, in: keyStore) else { return }
         let who = person
         do {
-            try await api.removeDevice(old, loseHistory: true)
+            try await api.removeDevice(old)
             ChatReplaced.clear(person: who, in: keyStore)
         } catch { /* kept: asked again next time */ }
     }

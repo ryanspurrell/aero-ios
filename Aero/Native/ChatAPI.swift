@@ -12,7 +12,8 @@ import WebKit
 ///   GET  rooms/people.json                the models a new chat may use
 ///   GET  devices.json?people=a,b          public keys of devices, to seal a new chat's key to
 ///   POST devices                          this phone as a device {device, ecdh, sign, label}; refused with {"error", "devices_full": n} at the most
-///   POST devices/remove                   one of this person's own devices {device}, taken out of their list
+///   GET  devices/holds.json?device=       what only that one of this person's own devices can open {holds: {rooms, epochs}}
+///   POST devices/remove                   one of this person's own devices {device}, taken out of their list (refused with 409 if it is the only holder of a chat's key)
 ///   POST rooms/new                        a new chat {device, room, name, members, seals, private}
 ///   POST rooms/<id>/send                  a sealed message {device, epoch, mentions, iv, ct, sig}
 ///   POST rooms/<id>/read                  read up to {seq}
@@ -171,17 +172,24 @@ final class ChatAPI {
 
     struct RemoveBody: Encodable {
         var device: String
-        /// Aero refuses to remove the only holder of a chat's key unless this is true. Said only for a device this app has put away
-        /// itself: its keys are gone, so what is locked to it can be opened by nobody and keeping it only takes up a place.
-        var loseHistory: Bool
-        enum CodingKeys: String, CodingKey { case device; case loseHistory = "lose_history" }
+        /// What Aero gave when it warned that this device holds the only copy of a chat's key (bound to this device). This app never sends
+        /// one: it removes only a device it has found holds nothing alone.
+        var ack: String? = nil
     }
 
     /// Take one of this person's own devices out of their list in Aero. Never another person's: Aero answers 404 for an id that is not
-    /// in the signed-in person's list, which is taken as done.
-    func removeDevice(_ id: String, loseHistory: Bool = false) async throws {
-        do { _ = try await post("devices/remove", RemoveBody(device: id, loseHistory: loseHistory)) }
+    /// in the signed-in person's list, which is taken as done. A device that holds the only copy of a chat's key is refused (409).
+    func removeDevice(_ id: String) async throws {
+        do { _ = try await post("devices/remove", RemoveBody(device: id)) }
         catch let f as Failure where ChatAPI.alreadyGone(f) { return }
+    }
+
+    /// What only this device can open: rooms and chats whose key no other device and not the PC holds. Asked before moving to new keys.
+    struct Holds: Decodable, Equatable { var rooms: Int; var epochs: Int }
+
+    func holds(_ id: String) async throws -> Holds {
+        struct Answer: Decodable { var holds: Holds }
+        return try await get("devices/holds.json", ["device": id], as: Answer.self).holds
     }
 
     struct NewRoom: Encodable {
