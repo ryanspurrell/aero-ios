@@ -49,6 +49,13 @@ struct Question: Codable, Hashable, Identifiable {
     var choices: [QuestionChoice]
 }
 
+/// Where a thing put off went: its new day (and time), said as "Friday 4:00 PM". The old day's quiet row opens that day.
+struct MovedTo: Codable, Hashable {
+    var date: String
+    var time: String?
+    var text: String
+}
+
 struct DayItem: Codable, Hashable, Identifiable {
     var kind: String?                 // "item", "now" or "free" in a timeline's rows
     var id: String
@@ -59,7 +66,9 @@ struct DayItem: Codable, Hashable, Identifiable {
     var timeText: String?
     var endText: String?
     var allDay: Bool?
-    var state: String?                // open, done, overdue
+    var state: String?                // open, done, overdue; "moved" and "was_due" are quiet rows that only say where a thing went or was due
+    var markText: String?             // "Moved from Thursday", "Moved to Friday 4:00 PM", "Done later, on Saturday", "Was due Thursday"
+    var movedTo: MovedTo?
     var doneAtText: String?
     var since: String?
     var color: String?
@@ -73,7 +82,7 @@ struct DayItem: Codable, Hashable, Identifiable {
     var text: String?                 // a "free" row's words
 
     enum CodingKeys: String, CodingKey {
-        case kind, id, source, type, title, time, timeText, endText, allDay, state, doneAtText, since, color, icon
+        case kind, id, source, type, title, time, timeText, endText, allDay, state, doneAtText, since, color, icon, markText, movedTo
         case isRepeat = "repeat"
         case open, question, late, until, untilWords, text
     }
@@ -91,6 +100,8 @@ struct DayItem: Codable, Hashable, Identifiable {
         endText = try c.decodeIfPresent(String.self, forKey: .endText)
         allDay = try c.decodeIfPresent(Bool.self, forKey: .allDay)
         state = try c.decodeIfPresent(String.self, forKey: .state)
+        markText = try c.decodeIfPresent(String.self, forKey: .markText)
+        movedTo = try c.decodeIfPresent(MovedTo.self, forKey: .movedTo)
         doneAtText = try c.decodeIfPresent(String.self, forKey: .doneAtText)
         since = try c.decodeIfPresent(String.self, forKey: .since)
         color = try c.decodeIfPresent(String.self, forKey: .color)
@@ -115,6 +126,14 @@ struct SimpleNext: Codable, Hashable {
     var timeText: String?
     var line: String
     var button: String
+    /// Others at the same time: none of them is first (`next` is only the first as the book gave them).
+    var also: [SimpleAlso]?
+}
+
+struct SimpleAlso: Codable, Hashable, Identifiable {
+    var id: String
+    var title: String
+    var source: String?
 }
 
 struct SimpleLine: Codable, Hashable, Identifiable {
@@ -128,6 +147,8 @@ struct SimpleDay: Codable, Hashable {
     var greeting: String
     var clock: String
     var next: SimpleNext?
+    /// Everything that is next, together, when several are at the same time (the viewer's own order or reading direction orders them).
+    var nexts: [SimpleNext]?
     var behind: [SimpleLine]
     var later: [SimpleLine]
     var did: [SimpleLine]
@@ -155,6 +176,7 @@ struct Pill: Codable, Hashable, Identifiable {
     var state: String
     var source: String
     var question: Bool
+    var markText: String?
 }
 
 struct WeekDay: Codable, Hashable, Identifiable {

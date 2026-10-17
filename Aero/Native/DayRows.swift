@@ -13,14 +13,19 @@ struct DayRows: View {
     var inlineQuestions = true
     let store: OrganizerDayStore
     let open: (OpenRef) -> Void
+    /// Things at the same time have no order of their own (Aryn, 2026-10-17: "the choice is on the user"). Organizer gives them as made; the
+    /// order drawn is the viewer's: their own order where they gave one (none is kept yet), else their reading direction.
+    @Environment(\.layoutDirection) private var direction
 
     private var actions: PointerActions { .day(store, open: open) }
 
     var body: some View {
-        let nextID = bigNext ? day.simple.next?.id : nil
+        let rows = TieOrder.arrange(day.rows, rightToLeft: direction == .rightToLeft)
+        let anytime = TieOrder.arrange(day.anytime, rightToLeft: direction == .rightToLeft)
+        let nextID = bigNext ? TieOrder.firstNext(day.simple, rightToLeft: direction == .rightToLeft) : nil
         VStack(alignment: .leading, spacing: Look.Space.gap) {
             SpineColumn(metrics: metrics, spacing: Look.Space.gap) {
-                ForEach(day.rows) { row in
+                ForEach(rows) { row in
                     switch row.kind {
                     case "now": NowRow(metrics: metrics, timeText: row.timeText ?? "")
                     case "free": FreeRow(metrics: metrics, text: row.text ?? "")
@@ -41,7 +46,7 @@ struct DayRows: View {
             if !day.anytime.isEmpty {
                 Text(day.isToday ? "Today, no set time" : "No set time").fx(Look.Size.question, style: .subheadline).foregroundStyle(Look.Palette.soft)
                     .padding(.top, Look.Space.hair)
-                ForEach(day.anytime) { item in
+                ForEach(anytime) { item in
                     VStack(alignment: .leading, spacing: Look.Space.tight) {
                         PointerView(pointer: Pointer(item), size: .block, actions: actions)
                         if inlineQuestions, item.question != nil { PointerView(pointer: Pointer(item), size: .question, actions: actions) }
@@ -56,3 +61,28 @@ struct DayRows: View {
     var nextRowID: String? { day.simple.next.flatMap { n in day.rows.first { $0.id == n.id }?.id } }
 }
 
+
+/// How a tie is read: Organizer keeps simultaneous things as they were made and says none is first; a left-to-right reader reads them as
+/// given, a right-to-left reader the other way round (the same rule as the web page's drawing, aero_web.py `orgTieOrder`).
+enum TieOrder {
+    /// Each run of consecutive item rows with the same time (no time is one run), reversed for a right-to-left reader.
+    static func arrange(_ rows: [DayItem], rightToLeft: Bool) -> [DayItem] {
+        guard rightToLeft else { return rows }
+        var out: [DayItem] = [], run: [DayItem] = []
+        func flush() { out.append(contentsOf: run.reversed()); run = [] }
+        for r in rows {
+            if let k = r.kind, k != "item" { flush(); out.append(r); continue }
+            if let first = run.first, (first.time ?? "") != (r.time ?? "") { flush() }
+            run.append(r)
+        }
+        flush()
+        return out
+    }
+
+    /// The id drawn as the big Next: the first of the things that are next together, in the viewer's reading direction.
+    static func firstNext(_ s: SimpleDay, rightToLeft: Bool) -> String? {
+        let ids = (s.nexts ?? []).map(\.id)
+        if ids.isEmpty { return s.next?.id }
+        return rightToLeft ? ids.last : ids.first
+    }
+}

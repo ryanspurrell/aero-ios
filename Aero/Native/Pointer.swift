@@ -28,6 +28,10 @@ struct Pointer: Identifiable {
     var dot = false
     /// How long until it, as the day says it (the big Next block).
     var until: String? = nil
+    /// "Moved from Thursday" and the like, for a pill's spoken label (a pill has no second line).
+    var markText: String? = nil
+    /// A quiet row: it only says where a thing went or was due (state "moved" or "was_due"), so it is drawn lighter and never as next.
+    var quiet = false
 
     var uid: String { owner + ":" + id }
 }
@@ -61,13 +65,23 @@ extension Pointer {
         self.init(owner: item.source ?? "organizer", id: item.id, title: item.title ?? "", time: item.timeText,
                   meta: Pointer.meta(of: item), done: item.state == "done", colorValue: item.color, icon: item.icon,
                   question: item.question, open: item.open, until: item.until)
+        quiet = Pointer.isQuiet(item.state)
+        // the old day's row opens the new place: the day it was moved to
+        if item.state == "moved", let to = item.movedTo { open = OpenRef(app: Pointer.dayApp, id: to.date, occurrence: nil) }
     }
+
+    /// The owner name of a pointer that opens a day of the calendar rather than a thing.
+    static let dayApp = "organizer-day"
+
+    static func isQuiet(_ state: String?) -> Bool { state == "moved" || state == "was_due" }
 
     /// A week's or a month's pill.
     init(_ pill: Pill) {
         self.init(owner: pill.source, id: pill.id, title: pill.title, time: pill.timeText.isEmpty ? nil : pill.timeText, done: pill.state == "done",
                   colorValue: pill.color, icon: pill.icon, question: nil)
+        quiet = Pointer.isQuiet(pill.state)
         if pill.question { meta = "?" }
+        markText = pill.markText
     }
 
     /// The home's Carry on card and small keys.
@@ -81,12 +95,18 @@ extension Pointer {
     }
 
     static func meta(of item: DayItem) -> String? {
-        if item.state == "done" { return "Done" + (item.doneAtText.map { " at " + $0 } ?? "") }
-        if item.state == "overdue" { return "From before" }
-        if let until = item.until { return until }
-        if let end = item.endText, !end.isEmpty { return "Until " + end }
-        if item.late == true { return "Not done" }
-        return item.isRepeat == true ? "Repeats" : nil
+        // a quiet row says only where the thing went or was due
+        if Pointer.isQuiet(item.state) { return item.markText }
+        var base: String?
+        if item.state == "done" { base = "Done" + (item.doneAtText.map { " at " + $0 } ?? "") }
+        else if item.state == "overdue" { base = "From before" }
+        else if let until = item.until { base = until }
+        else if let end = item.endText, !end.isEmpty { base = "Until " + end }
+        else if item.late == true { base = "Not done" }
+        else if item.isRepeat == true { base = "Repeats" }
+        // "Moved from Thursday", or "Was due Thursday" on the day it was done, beside the rest
+        let said = [base, item.markText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")
+        return said.isEmpty ? nil : said
     }
 }
 
@@ -153,7 +173,7 @@ struct PointerView: View {
             }
             .frame(maxWidth: .infinity, minHeight: Look.Space.sizeControl - 2 * Look.Space.padY, alignment: .leading)
             .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.padY)
-            .bubble(pointer.colorValue, done: pointer.done)
+            .bubble(pointer.colorValue, done: pointer.done || pointer.quiet)
         }
         .buttonStyle(BubblePressStyle())
         .accessibilityLabel([pointer.title, pointer.time, pointer.meta, pointer.owner == "colony" ? "from the calendar" : nil].compactMap { $0 }.joined(separator: ", "))
@@ -166,10 +186,10 @@ struct PointerView: View {
             Text((pointer.time.map { Self.shortTime($0) + " " } ?? "") + pointer.title).lineLimit(1).fx(Look.Size.pill, style: .footnote)
             if pointer.meta == "?" { Text("?").fx(Look.Size.pill, style: .footnote) }
         }
-        .foregroundStyle(pointer.done ? Look.Palette.doneText : Look.Palette.ink)
+        .foregroundStyle(pointer.done || pointer.quiet ? Look.Palette.doneText : Look.Palette.ink)
         .padding(.horizontal, Look.Space.tight).padding(.vertical, Look.Space.hair)
-        .bubble(pointer.colorValue, done: pointer.done, radius: Look.Bubble.radiusPill, soft: true)
-        .accessibilityLabel([pointer.title, pointer.time].compactMap { $0 }.joined(separator: ", "))
+        .bubble(pointer.colorValue, done: pointer.done || pointer.quiet, radius: Look.Bubble.radiusPill, soft: true)
+        .accessibilityLabel([pointer.title, pointer.time, pointer.markText].compactMap { $0 }.joined(separator: ", "))
     }
 
     static func shortTime(_ t: String) -> String {
@@ -305,7 +325,10 @@ struct PointerView: View {
 extension PointerActions {
     /// The day's own: opening goes to the owner's screen; an answer is the same `update` and is kept by the store.
     static func day(_ store: OrganizerDayStore, open: @escaping (OpenRef) -> Void) -> PointerActions {
-        PointerActions(open: open, choose: { await store.choose($0) }, keepPlain: { _ in false })
+        // a quiet "moved to" row names a day, not a thing: tapping it goes to that day
+        PointerActions(open: { o in
+            if o.app == Pointer.dayApp { Task { await store.move(date: o.id) } } else { open(o) }
+        }, choose: { await store.choose($0) }, keepPlain: { _ in false })
     }
 }
 

@@ -92,13 +92,26 @@ LOOK_ICONS = ("list", "tasks", "cart", "book", "place", "home", "heart", "money"
 _LOOKS = [LOOKS]                                     # the kinds' looks for this answer (the person's own over the defaults)
 
 
+QUIET = ("moved", "was_due")      # states of a row that only says where a thing went or was due: never next, late, counted or busy
+
+
+def _quiet(e):
+    return e["state"] in QUIET
+
+
+def day_words(day, today):
+    """A day said plainly in the middle of a sentence, by its name so it reads the same from any day: 'Friday' within a week of today,
+    else '23 October'."""
+    return day.strftime("%A") if abs((day - today).days) < 7 else "%d %s" % (day.day, day.strftime("%B"))
+
+
 def _entry(source, kind, key, title, date, time="", end="", all_day=False, state="open", done_at="", since="", color=None, icon=None,
-           repeat=False, ref=None, question=None):
+           repeat=False, ref=None, question=None, mark="", mark_text="", moved_to=None):
     c, i = _LOOKS[0][kind]
     return {"source": source, "type": kind, "id": key, "title": title, "date": date.isoformat(), "time": time, "time_text": clock_text(time),
             "end": end, "end_text": clock_text(end), "all_day": all_day, "state": state, "done_at": done_at, "done_at_text": clock_text(done_at),
             "since": since, "color": color or c, "icon": icon or i, "repeat": repeat, "open": ref or {"app": "organizer", "id": key},
-            "question": question}
+            "question": question, "mark": mark, "mark_text": mark_text, "moved_to": moved_to}
 
 
 def _hm(d):
@@ -116,8 +129,14 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
     the default above), a calendar event's own calendar colour from Colony, a hex value. Nothing draws a colour of its own.)
     Every thing on the days first..last (dates, inclusive) as {date: [entry]}: Organizer's tasks that have a time or a date (a repeat on
     each day it falls; what was done on the day it was done; an open one from before, on today only, as 'from before'), and Colony's
-    events. A task not marked Open (Locked, or made before the marker) only while Locked mode is on: unchecked is private. A task put off
-    or set aside is not shown. A task that is a calendar event's time is shown once, as the task. `lists`: {project id: record}."""
+    events. A task not marked Open (Locked, or made before the marker) only while Locked mode is on: unchecked is private. A task set aside is not
+    shown. A task that is a calendar event's time is shown once, as the task. `lists`: {project id: record}.
+    The day's requirements (rebuild__bottom_up_organizer.md, "Answers so far"; DayRequirements.lean `reqOn`, which this matches by tests,
+    not by proof): an open task put off to a day not yet past is on its new day and time as normal, marked "Moved from <old day>", and on
+    its old day (when that is another day) as a quiet row, state "moved", "Moved to <day time>", `moved_to` naming the new place; a done
+    task is on the day it was done, whatever deferral it carries; a done task due on another day is also on that day as a quiet row, state
+    "was_due", "Done later, on <day>", and its done row says "Was due <day>". Within a time no order is made: the entries stay as the book
+    gave them, and the viewer's own order or reading direction is the drawing's."""
     out = {}
     cap = [ITEMS_MAX]
 
@@ -144,8 +163,10 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         title = rec.get("title") or ""
         look = {"color": proj.get("color") if proj.get("color") else None, "icon": proj.get("icon") if proj.get("icon") else None}
         d = rec.get("deferred") or {}
-        if d.get("until") and local(d["until"]) > local(today.isoformat() + " 00:00"):
-            continue
+        until = local(d["until"]) if d.get("until") else None
+        if rec.get("repeat") and until and until > local(today.isoformat() + " 00:00"):
+            continue                                             # a repeating task put off: as before (not in this requirement)
+        ahead = bool(until) and until.date() >= today and rec.get("status") == "open"
         kind = "buy" if rec.get("type") == "buy" else "repeat" if rec.get("repeat") else "task"
         q = question_of(oid, rec)
         key = oid[:8]
@@ -166,14 +187,41 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             continue
         if rec.get("status") == "done":
             da = local(rec.get("done_at")) if rec.get("done_at") else None
+            sched = when(rec) if da else None
+            other = bool(sched) and sched.date() != da.date()     # due one day, done another
             if da and first <= da.date() <= last:
-                sched = when(rec)
                 at = _hm(sched) if sched and _has_time(rec.get("due") or rec.get("remind")) and sched.date() == da.date() else _hm(da)
-                put(_entry("organizer", kind, key, title, da.date(), at, state="done", done_at=_hm(da), **look))
+                was = ("%s %s" % ("Was due" if sched < da else "Due", day_words(sched.date(), today))) if other else ""
+                put(_entry("organizer", kind, key, title, da.date(), at, state="done", done_at=_hm(da), mark="due_then_done" if other else "",
+                           mark_text=was, **look))
+            if other and first <= sched.date() <= last:
+                put(_entry("organizer", kind, key, title, sched.date(), _hm(sched) if _has_time(rec.get("due") or rec.get("remind")) else "",
+                           state="was_due", mark="due_then_done",
+                           mark_text="Done %s, on %s" % ("later" if sched < da else "earlier", day_words(da.date(), today)), **look))
             continue
         if rec.get("status") != "open":
             continue
         w = when(rec)
+        if ahead:
+            # put off to a day not yet past: on the new day and time as normal, marked; the old day says where it went, quietly
+            nd = until.date()
+            new_timed = _has_time(d["until"])
+            old_timed = _has_time(rec.get("due") or rec.get("remind"))
+            if w is None:
+                moved_from = "Moved"
+            elif w.date() != nd:
+                moved_from = "Moved from " + day_words(w.date(), today)
+            else:
+                moved_from = "Moved from " + clock_text(_hm(w)) if old_timed else "Moved"
+            if first <= nd <= last:
+                put(_entry("organizer", kind, key, title, nd, _hm(until) if new_timed else "", question=q, mark="moved_from",
+                           mark_text=moved_from, **look))
+            if w is not None and w.date() != nd and first <= w.date() <= last:
+                where = day_words(nd, today) + (" " + clock_text(_hm(until)) if new_timed else "")
+                put(_entry("organizer", kind, key, title, w.date(), _hm(w) if old_timed else "", state="moved", mark="moved_to",
+                           mark_text="Moved to " + where,
+                           moved_to={"date": nd.isoformat(), "time": _hm(until) if new_timed else "", "text": where}, **look))
+            continue
         if w is None and q:
             # a line quick add was not sure about has no time of its own yet: it sits on the day of the earliest time it could mean
             # (today when no reading sets one), with its question, so the question is where the person looks
@@ -221,7 +269,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                        all_day=all_day or not timed, ref=ref, color=ev.get("colour") or None))
             day += dt.timedelta(days=1)
     for day in out.values():
-        day.sort(key=lambda x: (x["time"] == "", x["time"], x["title"].lower()))
+        day.sort(key=lambda x: (x["time"] == "", x["time"]))      # by time only: python's sort is stable, so a tie stays as the book gave it
     return out
 
 
@@ -247,21 +295,25 @@ def day_view(entries, day, t):
     anytime = [e for e in mine if not (e["time"] and not e["all_day"])]
     now_hm = _hm(t)
     is_today = day == today
-    rows, nxt = [], None
+    rows, nxt, tied = [], None, []
     placed = False
+    tie = None                                   # the time of the next one: everything at that time is next together, none before another
     for e in timed:
         if is_today and not placed and e["time"] > now_hm:
             rows.append({"kind": "now", "time": now_hm, "time_text": clock_text(now_hm)})
-            later_open = [x for x in timed if x["time"] > now_hm and x["state"] != "done"]
+            later_open = [x for x in timed if x["time"] > now_hm and x["state"] not in ("done",) + QUIET]
             if later_open:
                 rows.append({"kind": "free", "text": "Free until " + later_open[0]["time_text"]})
             placed = True
         row = dict(e, kind="item", late=bool(is_today and e["state"] == "open" and e["time"] <= now_hm))
-        if is_today and e["state"] == "open" and e["time"] > now_hm and nxt is None:
+        if is_today and e["state"] == "open" and e["time"] > now_hm and (nxt is None or e["time"] == tie):
             mins = (dt.datetime.combine(day, dt.time(int(e["time"][:2]), int(e["time"][3:])), t.tzinfo) - t).total_seconds() / 60
             row["until"] = "in " + span_text(mins)
             row["until_words"] = "in " + span_words(mins)
-            nxt = row
+            if nxt is None:
+                nxt, tie = row, e["time"]
+            else:
+                tied.append(row)
         rows.append(row)
     if is_today and not placed:
         rows.append({"kind": "now", "time": now_hm, "time_text": clock_text(now_hm)})
@@ -270,9 +322,11 @@ def day_view(entries, day, t):
         rows.append({"kind": "free", "text": "Free" if not anytime else "Nothing at a set time"})
     anyrows = [dict(e, kind="item", late=False) for e in anytime]
     did = [{"id": e["id"], "text": said_back(e["title"], e["done_at_text"])} for e in mine if e["state"] == "done" and e["source"] == "organizer"]
-    after = [x for x in rows if x.get("kind") == "item" and x["state"] != "done" and x is not nxt and not x["late"]]
+    nexts = ([nxt] + tied) if nxt else []
+    after = [x for x in rows if x.get("kind") == "item" and x["state"] != "done" and x["state"] not in QUIET and not any(x is n for n in nexts)
+             and not x["late"]]
     later = [{"id": x["id"], "title": x["title"], "time_text": x["time_text"], "source": x["source"]} for x in after] \
-        + [{"id": x["id"], "title": x["title"], "time_text": "", "source": x["source"]} for x in anyrows if x["state"] != "done"]
+        + [{"id": x["id"], "title": x["title"], "time_text": "", "source": x["source"]} for x in anyrows if x["state"] != "done" and x["state"] not in QUIET]
     behind = [{"id": x["id"], "title": x["title"], "time_text": x["time_text"], "source": x["source"]}
               for x in rows if x.get("kind") == "item" and x.get("late")]
     return {"date": day.isoformat(), "label": day_label(day, today), "date_text": day_date_text(day), "is_today": is_today,
@@ -281,14 +335,20 @@ def day_view(entries, day, t):
             "simple": {"greeting": greeting(t.hour), "clock": "It's %s, %s" % (t.strftime("%A"), clock_text(now_hm)),
                        "next": ({"id": nxt["id"], "title": nxt["title"], "color": nxt["color"], "icon": nxt["icon"], "source": nxt["source"],
                                  "open": nxt["open"], "time_text": nxt["time_text"], "line": "At %s, %s" % (nxt["time_text"], nxt["until_words"]),
-                                 "button": "I'm going" if nxt["source"] == "colony" else "Done"} if nxt else None),
+                                 "button": "I'm going" if nxt["source"] == "colony" else "Done",
+                                 # others at the same time: none is first. `next` is the first as the book gave them, for a screen
+                                 # that draws one; a screen that can order them (the viewer's own order, their reading direction) uses `nexts`
+                                 "also": [{"id": x["id"], "title": x["title"], "source": x["source"]} for x in tied]} if nxt else None),
+                       "nexts": [{"id": n["id"], "title": n["title"], "color": n["color"], "icon": n["icon"], "source": n["source"],
+                                  "open": n["open"], "time_text": n["time_text"], "line": "At %s, %s" % (n["time_text"], n["until_words"]),
+                                  "button": "I'm going" if n["source"] == "colony" else "Done"} for n in nexts],
                        "behind": behind, "later": later, "did": did,
                        "none": "" if nxt or later or did or behind else "Nothing is planned for today."}}
 
 
 def pill(e):
     return {"id": e["id"], "title": e["title"], "time_text": e["time_text"], "color": e["color"], "icon": e["icon"], "state": e["state"],
-            "source": e["source"], "question": bool(e["question"])}
+            "source": e["source"], "question": bool(e["question"]), "mark_text": e["mark_text"]}
 
 
 def week_view(entries, day, t):
@@ -298,7 +358,7 @@ def week_view(entries, day, t):
     for i in range(7):
         d = monday + dt.timedelta(days=i)
         mine = entries.get(d.isoformat(), [])
-        days.append({"date": d.isoformat(), "day": d.day, "weekday": d.strftime("%a"), "today": d == today, "free": not mine,
+        days.append({"date": d.isoformat(), "day": d.day, "weekday": d.strftime("%a"), "today": d == today, "free": not [e for e in mine if not _quiet(e)],
                      "pills": [pill(e) for e in mine]})
     last = monday + dt.timedelta(days=6)
     text = ("%d - %d %s" % (monday.day, last.day, last.strftime("%B")) if monday.month == last.month
@@ -316,11 +376,11 @@ def month_view(entries, day, t):
         d = grid_start + dt.timedelta(days=i)
         mine = entries.get(d.isoformat(), [])
         colors = []
-        for e in mine:
+        for e in (x for x in mine if not _quiet(x)):
             if e["color"] not in colors:
                 colors.append(e["color"])
         cells.append({"date": d.isoformat(), "day": d.day, "in_month": d.month == first.month, "today": d == today,
-                      "count": len(mine), "colors": colors, "question": any(e["question"] for e in mine), "pills": [pill(e) for e in mine]})
+                      "count": len([e for e in mine if not _quiet(e)]), "colors": colors, "question": any(e["question"] for e in mine), "pills": [pill(e) for e in mine]})
     prev = (first - dt.timedelta(days=1)).replace(day=1)
     nxt = (first + dt.timedelta(days=32)).replace(day=1)
     return {"text": first.strftime("%B %Y"), "weekdays": ["M", "T", "W", "T", "F", "S", "S"], "cells": cells,
@@ -330,14 +390,14 @@ def month_view(entries, day, t):
 def year_view(entries, day, t):
     """Twelve small months, each day shaded by how full it is: a third of the year's busiest day each (picked, not grounded)."""
     today = t.date()
-    busiest = max([len(v) for v in entries.values()] or [0])
+    busiest = max([len([e for e in v if not _quiet(e)]) for v in entries.values()] or [0])
     months = []
     for m in range(1, 13):
         first = dt.date(day.year, m, 1)
         days = []
         for n in range(_cal.monthrange(day.year, m)[1]):
             d = first + dt.timedelta(days=n)
-            c = len(entries.get(d.isoformat(), []))
+            c = len([e for e in entries.get(d.isoformat(), []) if not _quiet(e)])
             level = 0 if not c else 1 if c * 3 <= busiest else 2 if c * 3 <= busiest * 2 else 3
             days.append({"date": d.isoformat(), "count": c, "level": level, "today": d == today,
                          "question": any(e["question"] for e in entries.get(d.isoformat(), []))})

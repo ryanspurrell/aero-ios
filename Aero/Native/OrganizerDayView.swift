@@ -266,6 +266,9 @@ struct SimpleDayView: View {
             Text("NEXT").fx(Look.Size.nextLabel, style: .caption1).tracking(1).foregroundStyle(Look.Palette.label)
             Text(n.title).fx(Look.Size.nextName, style: .title1).foregroundStyle(Look.Palette.ink)
             Text(n.line).fx(Look.Size.nextMeta, style: .subheadline).foregroundStyle(Look.Palette.label)
+            if let also = n.also, !also.isEmpty {
+                Text("Also then: " + also.map(\.title).joined(separator: ", ")).fx(Look.Size.nextMeta, style: .subheadline).foregroundStyle(Look.Palette.label)
+            }
             Button {
                 if n.source == "colony" { open(n.open); return }
                 Task { if await store.setDone(n.open.id, done: !done) { done.toggle() } }
