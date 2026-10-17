@@ -14,6 +14,8 @@ struct OrganizerDayScreen: View {
     /// Opens a thing's owner's own screen: Organizer's item, or Colony's event.
     var open: (OpenRef) -> Void = { _ in }
     var openLists: () -> Void = {}
+    /// Opens Chat, drawn natively; nil when there is no PC to talk to (Chat needs one), and the tab is then not shown.
+    var openChat: (() -> Void)? = nil
     /// The way back to where this was opened from; nil when this is the first screen.
     var back: (() -> Void)? = nil
     /// What the menu offers beside the calendar: a row to set up a PC, or to open the rest of Aero.
@@ -137,6 +139,7 @@ struct OrganizerDayScreen: View {
                     if store.backendKind == .phone { tab(DayTab.lists.title, selected: store.tab == .lists) { Task { await switchTo(.lists) } } }
                 }
                 if store.backendKind == .pc { tab(DayTab.lists.title, selected: false) { openLists() } }
+                if let openChat { tab(ChatWords.tab, selected: false) { openChat() } }
                 Spacer(minLength: 0)
             }
             Rectangle().fill(Look.Palette.rule).frame(height: 2)

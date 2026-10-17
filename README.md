@@ -217,6 +217,51 @@ URLSession). A colour is Organizer's (a name or hex), looked up as a theme token
 chosen in code; those tokens are not in the catalog yet. Anything not drawn natively opens in the web view. No Mac was at hand: nothing here
 was compiled, so the first workflow run may need small fixes.
 
+## Chat (`Aero/Native/Chat*.swift`, 2026-10-16, branch `phone-chat`; not compiled)
+
+A Chat tab beside Lists on the calendar (shown only when a PC is set up) brings in a page over the calendar: the list of chats, and a chat
+drawn like Messages (your words on the right, replies on the left, a box and a Send key; a Stop key takes Send's place while a reply is
+being written and the box is empty). Pages move on and off with Aero's spring; every move has a visible key (Back, New chat, Send, Stop the
+reply). Words are in `ChatWording.swift`; when something stops it is told in the one shape (what was being done, which step stopped, what
+can be done now, and a key that does it).
+
+Chats are end to end encrypted by design (`projects/messages`, `messages.js` `roomCrypto`), so the app does what the page does with no
+server change: this phone is a device (P-256 keys made on the phone and kept in the Keychain, registered once with `POST devices`; the PC
+then shares the keys of the chats it holds), a room key is opened from the seal made for this device (ECDH, HKDF-SHA256, AES-GCM), each
+message is opened only if its signature is its sending device's, and a message sent is sealed and signed the same way (`ChatCrypto.swift`).
+
+What it does:
+
+- Lists past chats (`GET rooms.json`): pinned first, unread counts, a lock mark on Locked ones.
+- Opens a chat and reads it (`GET rooms/<id>.json`), including the room's own notes.
+- Starts a chat with Open or Locked chosen first, in a sheet, before any text box exists; it cannot be changed after. The chat is made by its
+  first message, as the page does (`POST rooms/new`, then `POST rooms/<id>/send`).
+- Sends a message, and shows the reply as it is written: the app asks again about every 0.8 s while the server's `writing` list has the reply
+  or `rooms/<id>/busy` says one is being written, drawing it as far as it has got, until the finished reply arrives. Stop uses `rooms/<id>/stop`.
+- Locked: the server decides (`GET private/unlock/status?peek=1`, the same Face ID unlock the page holds; the app has no Face ID of its own).
+  Locked chats are in the list and can be started only while it is open; each open, each send and each return to the app asks again. When it
+  closes, or the app leaves the screen, the Locked chat's lines, keys and draft are cleared from memory and nothing of it is drawn; "Unlock in
+  Aero" opens the web view, where Face ID is done, and the list asks again when it is closed.
+
+What it does not do yet:
+
+- Voice, attachments, pictures, reactions drawn under a message, steps and web sources of a Work reply, editing or redoing a message,
+  renaming, pinning, moving or deleting a chat, adding people, chats between people (a person's messages are read, but starting one is not
+  offered), the model and effort choice (a new chat uses the first model Aero offers, or for Locked the first that runs on the PC), Chat or
+  Work mode, memory lending (`rooms/lend`), notifications. The page's push events (`/events`) are not used: replies are found by asking.
+- Sharing keys with other devices (`missing` in the room answer) is not done from the phone; the PC does it for the chats it holds.
+- A Locked chat made before this phone was a device may not be readable here (the store seals Locked keys to a person's private devices; the
+  app does not mark itself as one).
+- Where Face ID is asked: only in the page; native Face ID would need the Associated Domains capability (see Open items).
+- Tests: `AeroTests/ChatTests.swift` (formats against themselves, what the server's answers decode to, sides and streaming merge, ordering,
+  the failure shape, polling rule, no emojis in the words).
+
+Not checked without a build: that any of it compiles (CryptoKit calls, `while let self`, the SwiftUI layout); that this app's bytes match the
+page's (the same AAD strings, HKDF salt and info, key point and signature forms were copied from `messages.js` and the store, but no page-made
+message has been opened by this code, nor the reverse); that registering a device makes the PC share keys of old chats, and how long it takes;
+that the server accepts `rooms/new` made from the phone with `@pc` and `@fingoid` sealed (its answer to a missing `@fingoid` device was not
+read); how it looks and moves (spacing, scrolling to the end while a reply grows, the keyboard).
+
 ## The phone's own Organizer (no PC), 2026-10-15/16
 
 Design: `projects/aero/design__ios_without_a_pc_2026-10-15.md`, steps 1 to 4. With no server address the app keeps Organizer's records
