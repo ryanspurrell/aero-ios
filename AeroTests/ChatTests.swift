@@ -2,7 +2,7 @@ import XCTest
 import CryptoKit
 @testable import Aero
 
-/// Chat without a screen: the keys and message formats (checked against themselves; the page's own bytes are the check that needs a phone),
+/// Chat without a screen: (the keys and message formats are checked against the reference vectors in ChatVectorTests),
 /// what the server's answers decode to, what is drawn on which side, how a failure is worded, and when to stop asking for a reply.
 /// All names, messages and keys are invented.
 final class ChatTests: XCTestCase {
@@ -14,58 +14,8 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(ChatBase64.decode(ChatBase64.encode(Data("hello".utf8))), Data("hello".utf8))
     }
 
-    // MARK: keys
-
-    func testAPublicKeyIsTheUncompressedPointAndASignatureIsRS() throws {
-        let d = ChatDevice.make(person: "p1")
-        XCTAssertEqual(ChatBase64.decode(d.ecdhPublic)?.count, 65)
-        XCTAssertEqual(ChatBase64.decode(d.signPublic)?.count, 65)
-        let sealed = try ChatCrypto.encrypt(room: "r00", epoch: 0, key: ChatCrypto.freshKey(), text: "hi", device: d)
-        XCTAssertEqual(ChatBase64.decode(sealed.sig)?.count, 64)
-    }
-
-    func testTheDeviceIsKeptAndComesBackTheSame() {
-        let store = MemoryChatKeyStore()
-        let first = ChatDeviceKeeper.device(for: "p1", in: store)
-        let again = ChatDeviceKeeper.device(for: "p1", in: store)
-        XCTAssertEqual(first.id, again.id)
-        XCTAssertEqual(first.ecdhPublic, again.ecdhPublic)
-        XCTAssertEqual(first.signPublic, again.signPublic)
-        XCTAssertNotEqual(ChatDeviceKeeper.device(for: "p2", in: store).id, first.id)
-    }
-
-    func testARoomKeySealedToAnotherDeviceIsOpenedByThatDevice() throws {
-        let mine = ChatDevice.make(person: "p1"), pc = ChatDevice.make(person: "@pc")
-        let key = ChatCrypto.freshKey()
-        let seals = try ChatCrypto.seal(room: "rabc", epoch: 0, key: key,
-                                        to: [ChatDeviceKeys(device: mine.id, ecdh: mine.ecdhPublic, personID: "p1"), ChatDeviceKeys(device: pc.id, ecdh: pc.ecdhPublic, personID: "@pc")],
-                                        person: "p1", from: mine)
-        XCTAssertEqual(seals.count, 2)
-        let forPC = seals.first { $0.device == pc.id }!
-        let opened = try ChatCrypto.unseal(room: "rabc", seal: ChatSeal(epoch: forPC.epoch, byPerson: "p1", byDevice: mine.id, iv: forPC.iv, ct: forPC.ct), sealerEcdh: mine.ecdhPublic, device: pc)
-        XCTAssertEqual(opened.withUnsafeBytes { Data($0) }, key.withUnsafeBytes { Data($0) })
-        // the same seal read by the wrong device does not open
-        let other = ChatDevice.make(person: "@pc")
-        XCTAssertThrowsError(try ChatCrypto.unseal(room: "rabc", seal: ChatSeal(epoch: 0, byPerson: "p1", byDevice: mine.id, iv: forPC.iv, ct: forPC.ct), sealerEcdh: mine.ecdhPublic, device: other))
-    }
-
-    func testAMessageOpensWithItsSendersSigningKeyAndNotWithAnotherOrAfterChange() throws {
-        let me = ChatDevice.make(person: "p1"), stranger = ChatDevice.make(person: "p1")
-        let key = ChatCrypto.freshKey()
-        let s = try ChatCrypto.encrypt(room: "rabc", epoch: 3, key: key, text: "call Sam at 9", device: me)
-        let body = try ChatCrypto.open(room: "rabc", epoch: 3, sender: "p1", device: me.id, iv: s.iv, ct: s.ct, sig: s.sig, key: key, signPublic: me.signPublic)
-        XCTAssertEqual(body["t"] as? String, "call Sam at 9")
-        XCTAssertThrowsError(try ChatCrypto.open(room: "rabc", epoch: 3, sender: "p1", device: me.id, iv: s.iv, ct: s.ct, sig: s.sig, key: key, signPublic: stranger.signPublic)) {
-            XCTAssertEqual($0 as? ChatCryptoError, .notVerified)
-        }
-        // claimed by another sender or in another room: the signature no longer covers it
-        XCTAssertThrowsError(try ChatCrypto.open(room: "rabc", epoch: 3, sender: "p2", device: me.id, iv: s.iv, ct: s.ct, sig: s.sig, key: key, signPublic: me.signPublic))
-        XCTAssertThrowsError(try ChatCrypto.open(room: "rxyz", epoch: 3, sender: "p1", device: me.id, iv: s.iv, ct: s.ct, sig: s.sig, key: key, signPublic: me.signPublic))
-    }
-
-    func testARoomIdIsRAndSixteenHexDigits() {
-        let id = ChatCrypto.roomID()
-        XCTAssertNotNil(id.range(of: "^r[0-9a-f]{16}$", options: .regularExpression))
+    static func soft(_ person: String) -> ChatDevice {
+        ChatDevice.software(person: person, id: ChatBase64.encode(Data((0..<12).map { _ in UInt8.random(in: 0...255) })), ecdh: P256.KeyAgreement.PrivateKey(), sign: P256.Signing.PrivateKey())
     }
 
     // MARK: opening a stored message
@@ -76,7 +26,7 @@ final class ChatTests: XCTestCase {
     }
 
     func testAMessageIsOpenedFromTheAnswersDevices() throws {
-        let me = ChatDevice.make(person: "p1")
+        let me = Self.soft("p1")
         let key = ChatCrypto.freshKey()
         let m = try wire(1, from: me, key: key, text: "hello")
         let devices = ["owner": [ChatDeviceInfo(device: me.id, ecdh: me.ecdhPublic, sign: me.signPublic, label: nil, personID: nil, isPrivate: nil)]]
@@ -86,7 +36,7 @@ final class ChatTests: XCTestCase {
     }
 
     func testWithoutTheKeyOrTheSenderTheLineSaysSo() throws {
-        let me = ChatDevice.make(person: "p1")
+        let me = Self.soft("p1")
         let key = ChatCrypto.freshKey()
         let m = try wire(1, from: me, key: key, text: "hello")
         XCTAssertEqual(ChatOpener.entry(m, room: "rabc", keys: [:], devices: [:], holders: [:], locked: false).unreadable, "Sent before you joined")
@@ -96,12 +46,12 @@ final class ChatTests: XCTestCase {
     func testANoteIsPlainAndAReactionDrawsNothing() throws {
         let note = ChatWireMessage(seq: 2, kind: "note", sender: "", senderID: nil, device: nil, at: 5, epoch: nil, iv: nil, ct: nil, sig: nil, note: "Aryn started this")
         XCTAssertEqual(ChatOpener.entry(note, room: "rabc", keys: [:], devices: [:], holders: [:], locked: false).note, "Aryn started this")
-        let me = ChatDevice.make(person: "p1")
+        let me = Self.soft("p1")
         let key = ChatCrypto.freshKey()
         let reaction = try JSONSerialization.data(withJSONObject: ["re": "yes"])
         let sealed = try ChatCrypto.lock(reaction, key: key, aad: "rabc|0|p1|\(me.id)")
         let iv = ChatBase64.encode(sealed.iv), ct = ChatBase64.encode(sealed.ct)
-        let sig = ChatBase64.encode(try me.sign.signature(for: ChatCrypto.signedPart(room: "rabc", epoch: 0, sender: "p1", device: me.id, iv: iv, ct: ct)).rawRepresentation)
+        let sig = ChatBase64.encode(try me.signRaw(ChatCrypto.signedPart(room: "rabc", epoch: 0, sender: "p1", device: me.id, iv: iv, ct: ct)))
         let m = ChatWireMessage(seq: 3, kind: "person", sender: "owner", senderID: "p1", device: me.id, at: 6, epoch: 0, iv: iv, ct: ct, sig: sig, note: nil)
         let devices = ["owner": [ChatDeviceInfo(device: me.id, ecdh: me.ecdhPublic, sign: me.signPublic, label: nil, personID: nil, isPrivate: nil)]]
         let e = ChatOpener.entry(m, room: "rabc", keys: ["rabc|0": key], devices: devices, holders: [:], locked: false)
@@ -273,6 +223,7 @@ final class ChatTests: XCTestCase {
             (URLError(.notConnectedToInternet), "reaching Aero", .retry),
             (ChatCryptoError.cannotOpen, "reading it on this phone", .retry),
             (ChatSessionError.noKey, "reading it on this phone", .retry),
+            (ChatKeyError.unreadable(-25308), "reading it on this phone", .retry),
         ]
         for (error, step, action) in cases {
             let s = ChatStopWords.make(doing: ChatStopWords.sending, error: error)

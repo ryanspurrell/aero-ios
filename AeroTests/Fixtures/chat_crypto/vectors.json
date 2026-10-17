@@ -1,0 +1,271 @@
+{
+ "about": "Invented keys and text only. See spec__chat_encryption_2026-10-14.md. Regenerate with chat_crypto_vectors.py; \"page_made\" is written by chat_crypto_vectors_page.mjs.",
+ "format_version": 1,
+ "room": {
+  "id": "r0123456789abcdef",
+  "name": "Invented test room"
+ },
+ "devices": {
+  "alice": {
+   "person": "person-alice-0001",
+   "device": "AAECAwQFBgcICQoL",
+   "ecdh_private_scalar_hex": "6de3be1d5c8f30e4046e3617b05a6024239ac563bb141a2303c23bf9cedb0d42",
+   "sign_private_scalar_hex": "4fd39fe1ad2d3b87605fe47577c1642f45ae295494445e716a046e4939158152",
+   "ecdh_public": "BAHIu-xt8Cmt6TQiRnnuPKvySMieBK71F86m4Y7KCpG6SgGNoc6W5Id8U4SzwzQbRiglWmqMFe8Dj9Ssly13_Os",
+   "sign_public": "BMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4",
+   "register_body": {
+    "device": "AAECAwQFBgcICQoL",
+    "ecdh": "BAHIu-xt8Cmt6TQiRnnuPKvySMieBK71F86m4Y7KCpG6SgGNoc6W5Id8U4SzwzQbRiglWmqMFe8Dj9Ssly13_Os",
+    "sign": "BMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4",
+    "label": "iPhone"
+   }
+  },
+  "bob": {
+   "person": "person-bob-0002",
+   "device": "EBESExQVFhcYGRob",
+   "ecdh_private_scalar_hex": "04565433d01a30b27303125239acf365766e6edd58d94dc813fab9e6e1c1bd3d",
+   "sign_private_scalar_hex": "8a8d2425757474b163a954a2bbc0b06f0442af26aab43dd96cef9fad394e3f89",
+   "ecdh_public": "BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY",
+   "sign_public": "BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI",
+   "register_body": {
+    "device": "EBESExQVFhcYGRob",
+    "ecdh": "BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY",
+    "sign": "BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI",
+    "label": "iPhone"
+   }
+  }
+ },
+ "key_derivation": {
+  "alice_to_bob": {
+   "ecdh_shared_secret_x_hex": "b3be7bab6021ea51b8788e7ce957311ec4eb67b6beccee682a20df211c4c0e5a",
+   "hkdf_hash": "SHA-256",
+   "hkdf_salt_utf8": "r0123456789abcdef|0",
+   "hkdf_info_utf8": "fingus-messages-room-key",
+   "kek_hex": "4d6fb3fdd604231622a392ab7cdfe23693cde0b40cfd325076ffc9ded667e1cb"
+  },
+  "alice_to_alice": {
+   "ecdh_shared_secret_x_hex": "9bf491aa3f4805aeeef0658995ae75159039041cfcfd74fb07596319ee8ed10c",
+   "hkdf_hash": "SHA-256",
+   "hkdf_salt_utf8": "r0123456789abcdef|0",
+   "hkdf_info_utf8": "fingus-messages-room-key",
+   "kek_hex": "bb1c7330b9c507f5eccb4caa68bf3aa6edb38fe9562b3310fd1bf081abc53a05"
+  }
+ },
+ "room_keys_hex": {
+  "0": "aa030b7b00d7d167ac29484888e3e850cb1a7cd9eb8f984b65f6b4018c79e250",
+  "1": "2d96c18144afdb4951297dc83b10fd68a7e050db3e6d05e43e394c24be4a6ccf"
+ },
+ "seals": [
+  {
+   "sealed_by": "alice",
+   "by_person": "person-alice-0001",
+   "by_device": "AAECAwQFBgcICQoL",
+   "aad": "r0123456789abcdef|0|person-alice-0001|AAECAwQFBgcICQoL",
+   "as_sent": {
+    "epoch": 0,
+    "person": "person-alice-0001",
+    "device": "AAECAwQFBgcICQoL",
+    "iv": "V-DoL6UtUHkWXIqK",
+    "ct": "uamXVgJnVxftS9ORe5D7UnYOm2UYWWwQzB2Kn75KNxQ_XTTDffV7Bp8ZSRAMGWgL"
+   }
+  },
+  {
+   "sealed_by": "alice",
+   "by_person": "person-alice-0001",
+   "by_device": "AAECAwQFBgcICQoL",
+   "aad": "r0123456789abcdef|0|person-bob-0002|EBESExQVFhcYGRob",
+   "as_sent": {
+    "epoch": 0,
+    "person": "person-bob-0002",
+    "device": "EBESExQVFhcYGRob",
+    "iv": "U8BbIG5qNZorhzLh",
+    "ct": "fqsjE1k5ER4G97zZml8Zfr29i5evYRJst4CyHblvFC2qXuTqsqhOyEMKkakAWSi-"
+   }
+  },
+  {
+   "sealed_by": "bob",
+   "by_person": "person-bob-0002",
+   "by_device": "EBESExQVFhcYGRob",
+   "aad": "r0123456789abcdef|1|person-alice-0001|AAECAwQFBgcICQoL",
+   "as_sent": {
+    "epoch": 1,
+    "person": "person-alice-0001",
+    "device": "AAECAwQFBgcICQoL",
+    "iv": "D8uStRbLTV4qcQCz",
+    "ct": "A31uihdt-euGrldG4kywk9xwAXPyJj3Zbh-8QNqMjUgwC9lvW8eTAqP-Cvd3Ysc8"
+   }
+  },
+  {
+   "sealed_by": "bob",
+   "by_person": "person-bob-0002",
+   "by_device": "EBESExQVFhcYGRob",
+   "aad": "r0123456789abcdef|1|person-bob-0002|EBESExQVFhcYGRob",
+   "as_sent": {
+    "epoch": 1,
+    "person": "person-bob-0002",
+    "device": "EBESExQVFhcYGRob",
+    "iv": "HELoBnnQZgShqCgB",
+    "ct": "-sKn0u-Co6seRa_lTJDTwzkxN5ZZxmz4apu-U0Z0wt63XcSdI0o8JNLH3mJyRYMi"
+   }
+  }
+ ],
+ "rooms_new_body_as_the_page_builds_it": {
+  "device": "AAECAwQFBgcICQoL",
+  "room": "r0123456789abcdef",
+  "name": "Invented test room",
+  "members": [
+   {
+    "kind": "person",
+    "name": "bob"
+   }
+  ],
+  "seals": [
+   {
+    "epoch": 0,
+    "person": "person-alice-0001",
+    "device": "AAECAwQFBgcICQoL",
+    "iv": "V-DoL6UtUHkWXIqK",
+    "ct": "uamXVgJnVxftS9ORe5D7UnYOm2UYWWwQzB2Kn75KNxQ_XTTDffV7Bp8ZSRAMGWgL"
+   },
+   {
+    "epoch": 0,
+    "person": "person-bob-0002",
+    "device": "EBESExQVFhcYGRob",
+    "iv": "U8BbIG5qNZorhzLh",
+    "ct": "fqsjE1k5ER4G97zZml8Zfr29i5evYRJst4CyHblvFC2qXuTqsqhOyEMKkakAWSi-"
+   }
+  ],
+  "private": false
+ },
+ "messages": [
+  {
+   "name": "alice_plain",
+   "epoch": 0,
+   "sender_id": "person-alice-0001",
+   "device": "AAECAwQFBgcICQoL",
+   "plaintext_json": "{\"t\":\"Hello Bob, this is an invented test message.\"}",
+   "plaintext_hex": "7b2274223a2248656c6c6f20426f622c207468697320697320616e20696e76656e7465642074657374206d6573736167652e227d",
+   "aad": "r0123456789abcdef|0|person-alice-0001|AAECAwQFBgcICQoL",
+   "iv": "12aJX1ABjNkcbH19",
+   "ct": "jtVvYbSaN-CblZ0PcolZXJA67zdd-zjdnFOsi17fnlGAaoIzLi1hIDFe935uHF08nEzx_H02iPL7GBxcGFHZHnNEA3g",
+   "signed_string": "r0123456789abcdef|0|person-alice-0001|AAECAwQFBgcICQoL|12aJX1ABjNkcbH19|jtVvYbSaN-CblZ0PcolZXJA67zdd-zjdnFOsi17fnlGAaoIzLi1hIDFe935uHF08nEzx_H02iPL7GBxcGFHZHnNEA3g",
+   "sig": "LVBzWmUekMvo5kjjHMbofqaFuzbsjgtnm944srX4Rdfi_ZDhOeyIbQczSPBj52SWk76PBiPQ_uwmWUrbHRPrGw",
+   "sig_note": "RFC 6979 deterministic ECDSA, raw r||s (64 bytes), base64url",
+   "send_body_as_the_page_builds_it": {
+    "device": "AAECAwQFBgcICQoL",
+    "epoch": 0,
+    "mentions": [],
+    "iv": "12aJX1ABjNkcbH19",
+    "ct": "jtVvYbSaN-CblZ0PcolZXJA67zdd-zjdnFOsi17fnlGAaoIzLi1hIDFe935uHF08nEzx_H02iPL7GBxcGFHZHnNEA3g",
+    "sig": "LVBzWmUekMvo5kjjHMbofqaFuzbsjgtnm944srX4Rdfi_ZDhOeyIbQczSPBj52SWk76PBiPQ_uwmWUrbHRPrGw"
+   }
+  },
+  {
+   "name": "bob_unicode_and_extras",
+   "epoch": 0,
+   "sender_id": "person-bob-0002",
+   "device": "EBESExQVFhcYGRob",
+   "plaintext_json": "{\"t\":\"Café ☕ 日本語 😀 — \\\"quoted\\\" \\\\ back/slash\\nnewline\",\"v\":1}",
+   "plaintext_hex": "7b2274223a22436166c3a920e2989520e697a5e69cace8aa9e20f09f988020e28094205c2271756f7465645c22205c5c206261636b2f736c6173685c6e6e65776c696e65222c2276223a317d",
+   "aad": "r0123456789abcdef|0|person-bob-0002|EBESExQVFhcYGRob",
+   "iv": "j5T-XEvjrIxB2siZ",
+   "ct": "S3Y2x0NgEnckLT_Fm_4WAUehbmNMY6Q3igb-s_5B3rYgpxLJZQvRS78U7SQi20vtDAhmFGdX6lJH58Rg2GvQdJNxvHUUuV3z8za7uNIXmFYsy1dLryd2aMWskiA",
+   "signed_string": "r0123456789abcdef|0|person-bob-0002|EBESExQVFhcYGRob|j5T-XEvjrIxB2siZ|S3Y2x0NgEnckLT_Fm_4WAUehbmNMY6Q3igb-s_5B3rYgpxLJZQvRS78U7SQi20vtDAhmFGdX6lJH58Rg2GvQdJNxvHUUuV3z8za7uNIXmFYsy1dLryd2aMWskiA",
+   "sig": "2SPN9ifqG8aoCJTPCxNrtglfWhNCYwSD09d2WfV456DPuo6BAVyk24tslp84t4AlPPdAiqxaVE6I8uTibq0oKg",
+   "sig_note": "RFC 6979 deterministic ECDSA, raw r||s (64 bytes), base64url",
+   "send_body_as_the_page_builds_it": {
+    "device": "EBESExQVFhcYGRob",
+    "epoch": 0,
+    "mentions": [],
+    "iv": "j5T-XEvjrIxB2siZ",
+    "ct": "S3Y2x0NgEnckLT_Fm_4WAUehbmNMY6Q3igb-s_5B3rYgpxLJZQvRS78U7SQi20vtDAhmFGdX6lJH58Rg2GvQdJNxvHUUuV3z8za7uNIXmFYsy1dLryd2aMWskiA",
+    "sig": "2SPN9ifqG8aoCJTPCxNrtglfWhNCYwSD09d2WfV456DPuo6BAVyk24tslp84t4AlPPdAiqxaVE6I8uTibq0oKg"
+   }
+  },
+  {
+   "name": "alice_after_key_change",
+   "epoch": 1,
+   "sender_id": "person-alice-0001",
+   "device": "AAECAwQFBgcICQoL",
+   "plaintext_json": "{\"t\":\"Epoch one message.\"}",
+   "plaintext_hex": "7b2274223a2245706f6368206f6e65206d6573736167652e227d",
+   "aad": "r0123456789abcdef|1|person-alice-0001|AAECAwQFBgcICQoL",
+   "iv": "_ZSwLV7KufOJD6Lm",
+   "ct": "T_fAakKj16-MC1b8qn267-Ei1s7P0R3fZdjSSsW5cjYldCc9NYWVjEcd",
+   "signed_string": "r0123456789abcdef|1|person-alice-0001|AAECAwQFBgcICQoL|_ZSwLV7KufOJD6Lm|T_fAakKj16-MC1b8qn267-Ei1s7P0R3fZdjSSsW5cjYldCc9NYWVjEcd",
+   "sig": "c_H6TA_WmU5PxrVpCoJ-RnDVnkn7v00Boipy7e9OAejpaBkbquptooHydmypa78mukjy0pXLRSBBlu1n0lZ3cQ",
+   "sig_note": "RFC 6979 deterministic ECDSA, raw r||s (64 bytes), base64url",
+   "send_body_as_the_page_builds_it": {
+    "device": "AAECAwQFBgcICQoL",
+    "epoch": 1,
+    "mentions": [],
+    "iv": "_ZSwLV7KufOJD6Lm",
+    "ct": "T_fAakKj16-MC1b8qn267-Ei1s7P0R3fZdjSSsW5cjYldCc9NYWVjEcd",
+    "sig": "c_H6TA_WmU5PxrVpCoJ-RnDVnkn7v00Boipy7e9OAejpaBkbquptooHydmypa78mukjy0pXLRSBBlu1n0lZ3cQ"
+   }
+  }
+ ],
+ "live": {
+  "epoch": 0,
+  "sender": "fingus",
+  "device": "pc",
+  "aad": "r0123456789abcdef|0|fingus|pc",
+  "plaintext_json": "{\"d\":\"Hello Bo\"}",
+  "iv": "Ose0WbvZtkFHllun",
+  "ct": "DDK4earOdYHBJy9MNBfnu2Kt-odEK6Rqo36mJyWhHSY"
+ },
+ "box": {
+  "label": "notes",
+  "epoch": 0,
+  "aad": "r0123456789abcdef|0|notes",
+  "plaintext_json": "{\"text\":\"Invented room note.\"}",
+  "iv": "jsUOr51VqgGku5vZ",
+  "ct": "V5HCvSfDzDFchb5kfWmnl9iAVgxPIPwLLokVXBeAvInBG7DERH9h9M01SzMPRQ"
+ },
+ "safety_codes": {
+  "alice_one_device": {
+   "devices": [
+    {
+     "ecdh": "BAHIu-xt8Cmt6TQiRnnuPKvySMieBK71F86m4Y7KCpG6SgGNoc6W5Id8U4SzwzQbRiglWmqMFe8Dj9Ssly13_Os",
+     "sign": "BMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4"
+    }
+   ],
+   "joined": "BAHIu-xt8Cmt6TQiRnnuPKvySMieBK71F86m4Y7KCpG6SgGNoc6W5Id8U4SzwzQbRiglWmqMFe8Dj9Ssly13_OsBMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4",
+   "code": "16978 87365 61687 22300"
+  },
+  "two_devices_sorted": {
+   "devices": [
+    {
+     "ecdh": "BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY",
+     "sign": "BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI"
+    },
+    {
+     "ecdh": "BAHIu-xt8Cmt6TQiRnnuPKvySMieBK71F86m4Y7KCpG6SgGNoc6W5Id8U4SzwzQbRiglWmqMFe8Dj9Ssly13_Os",
+     "sign": "BMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4"
+    }
+   ],
+   "joined": "BAHIu-xt8Cmt6TQiRnnuPKvySMieBK71F86m4Y7KCpG6SgGNoc6W5Id8U4SzwzQbRiglWmqMFe8Dj9Ssly13_OsBMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4|BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trYBH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI",
+   "code": "47563 11654 59189 13602"
+  }
+ },
+ "page_made": {
+  "note": "Made by messages.js roomCrypto under Node WebCrypto. IV and ECDSA signature are random, so these are verify-only vectors: a client must accept them, not reproduce them.",
+  "node": "v26.8.1",
+  "seal_alice_to_bob_epoch0": {
+   "epoch": 0,
+   "person": "person-bob-0002",
+   "device": "EBESExQVFhcYGRob",
+   "iv": "AX6Fmfpe16UYlJL8",
+   "ct": "T8vGr2t5ZkUykMIOdEmcqz3vIYOJA3ExTDJRMnkPfLjkxQDwBj4a85R7QZ7j41K7"
+  },
+  "message_alice_epoch0": {
+   "epoch": 0,
+   "sender_id": "person-alice-0001",
+   "device": "AAECAwQFBgcICQoL",
+   "plaintext_json": "{\"t\":\"Made by the page's own code, random IV and signature.\"}",
+   "iv": "ZHxFMOInqVpA10zX",
+   "ct": "yATm1s-CfN5UyLVYYpi6oKWgofqjLKh91g_sH6JkKfEL11KyKPFxhlbjYOH0n-mTISAf68q582RU27Q4bX-ZgEYzOq-g1iyxjqKsKHY",
+   "sig": "ewEWTeFDpEv0a-DJWMW_7BKJ0VrpUI2F_yfOeVXEcZl7cExcIOOXEdvv-_pnWFYkwMlirnQV3KQvWUd3Rysq-g"
+  }
+ }
+}

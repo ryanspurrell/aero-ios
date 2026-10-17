@@ -16,6 +16,11 @@ enum ChatWords {
     static let lockedNeedsUnlock = "Locked chats open once Aero has unlocked with Face ID."
     static let unlockKey = "Unlock in Aero"
     static let lockedShut = "This chat is Locked."
+    static let safetyKey = "Safety code"
+    static let safetyTitle = "Safety code"
+    static let safetyNote = "Read these numbers to the person, or have them read theirs to you. If they are the same on both phones, the keys are the right ones."
+    static let safetyChanged = "These numbers are different from the last time you looked."
+    static let safetyAccept = "They match"
     static let waitingForKeys = "This chat isn't ready on this phone yet. Your PC is sharing it."
     static let lockedTitle = "Locked chat"
 
@@ -76,6 +81,9 @@ enum ChatStopWords {
         }
         if error is URLError {
             return ChatStopped(doing: doing, step: ChatStep.reaching, next: "Check your connection, then try again.", key: "Try again", action: .retry)
+        }
+        if error is ChatKeyError {
+            return ChatStopped(doing: doing, step: ChatStep.phoneKeys, next: "Unlock the phone, then try again. Nothing was changed.", key: "Try again", action: .retry)
         }
         if error is ChatCryptoError || error is ChatSessionError {
             return ChatStopped(doing: doing, step: ChatStep.phoneKeys, next: "Your PC may still be sharing the keys. Try again in a moment.", key: "Try again", action: .retry)

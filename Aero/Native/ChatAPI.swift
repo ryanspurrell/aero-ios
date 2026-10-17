@@ -27,8 +27,38 @@ final class ChatAPI {
     private let session: URLSession
     private let decoder = JSONDecoder()
 
-    init(session: URLSession = .shared) {
-        self.session = session
+    /// An ephemeral session of its own: no cache on disk (what comes back is ciphertext, live reply text and the list of chats), and cookies
+    /// kept apart from the rest of the app, holding only the web view's cookies that apply to this address.
+    static func isolatedSession() -> URLSession {
+        let config = URLSessionConfiguration.ephemeral
+        config.urlCache = nil
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        config.httpShouldSetCookies = true
+        config.httpCookieAcceptPolicy = .never
+        return URLSession(configuration: config)
+    }
+
+    init(session: URLSession? = nil) {
+        self.session = session ?? ChatAPI.isolatedSession()
+    }
+
+    /// Sign-out or another account or address: the cookies this session holds are dropped.
+    func forgetCookies() {
+        if let storage = session.configuration.httpCookieStorage { for c in storage.cookies ?? [] { storage.deleteCookie(c) } }
+    }
+
+    /// The cookies of a set that a request to `url` would carry: same host (or a parent domain of it), a path that covers it, and secure ones
+    /// only over https.
+    static func applicable(_ cookies: [HTTPCookie], to url: URL) -> [HTTPCookie] {
+        guard let host = url.host?.lowercased() else { return [] }
+        return cookies.filter { c in
+            let domain = String(c.domain.lowercased().drop(while: { $0 == "." }))
+            let hostOK = host == domain || host.hasSuffix("." + domain)
+            let path = url.path.isEmpty ? "/" : url.path
+            let pathOK = c.path == "/" || path == c.path || path.hasPrefix(c.path.hasSuffix("/") ? c.path : c.path + "/")
+            let secureOK = !c.isSecure || url.scheme == "https"
+            return hostOK && pathOK && secureOK
+        }
     }
 
     /// The address plus a path and query. The path is relative to the address the app was given, as the page's `%(path)s` is.
@@ -46,10 +76,13 @@ final class ChatAPI {
         return url
     }
 
+    /// Replace what the session holds with the web view's cookies that apply to the address: a cookie the web view no longer has is gone here too.
     @MainActor
     private func shareCookies() async {
-        let cookies = await WKWebsiteDataStore.default().httpCookieStore.allCookies()
-        for cookie in cookies { HTTPCookieStorage.shared.setCookie(cookie) }
+        guard let base = AppInfo.address, let storage = session.configuration.httpCookieStorage else { return }
+        let fresh = ChatAPI.applicable(await WKWebsiteDataStore.default().httpCookieStore.allCookies(), to: base)
+        for c in storage.cookies ?? [] { storage.deleteCookie(c) }
+        for c in fresh { storage.setCookie(c) }
     }
 
     /// What the server said when it refused: the Locked answer, a sign-in problem, or its own words.
@@ -72,6 +105,7 @@ final class ChatAPI {
     private func get<Answer: Decodable>(_ path: String, _ query: [String: String] = [:], as type: Answer.Type) async throws -> Answer {
         var request = URLRequest(url: try endpoint(path, query))
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         let data = try await run(request)
         do { return try decoder.decode(Answer.self, from: data) } catch { throw Failure.unreadable }
     }
@@ -79,6 +113,7 @@ final class ChatAPI {
     private func post<Body: Encodable>(_ path: String, _ body: Body) async throws -> Data {
         var request = URLRequest(url: try endpoint(path))
         request.httpMethod = "POST"
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
         return try await run(request)

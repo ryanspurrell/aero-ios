@@ -48,7 +48,15 @@ struct ChatScreen: View {
             }
         }
         .task {
-            if list == nil { list = ChatListModel(session: session.session) }
+            if list == nil {
+                list = ChatListModel(session: session.session)
+                // the account changed or signed out: what was drawn for the last one goes
+                session.session.onReset = {
+                    list?.clear()
+                    room?.clearAll()
+                    room = nil
+                }
+            }
             await list?.load()
         }
         .onChange(of: returned) { _ in Task { await list?.load() } }
@@ -219,6 +227,7 @@ private struct ChatRoomPage: View {
     var back: () -> Void
     var unlock: () -> Void
     @FocusState private var focused: Bool
+    @State private var showSafety = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -230,6 +239,10 @@ private struct ChatRoomPage: View {
             if model.phase == .ready || model.phase == .loading { composer }
         }
         .fingusGround()
+        .sheet(isPresented: $showSafety) {
+            SafetySheet(rows: model.safety, accept: { model.accept($0) })
+                .presentationDetents([.medium, .large])
+        }
         .task { await model.load() }
         .onDisappear { model.leave() }
     }
@@ -245,6 +258,16 @@ private struct ChatRoomPage: View {
             }
             .accessibilityLabel(ChatWords.back)
             Spacer(minLength: 0)
+            if model.phase == .ready && !model.safety.isEmpty {
+                Button { showSafety = true } label: {
+                    HStack(spacing: Look.Space.hair) {
+                        Image(systemName: model.keysChanged ? "exclamationmark.shield" : "checkmark.shield").font(.system(size: 13, weight: .bold))
+                        Text(ChatWords.safetyKey).fx(Look.Size.pill, style: .footnote)
+                    }
+                    .foregroundStyle(model.keysChanged ? Look.Palette.now : Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
+                }
+                .accessibilityLabel(model.keysChanged ? ChatWords.safetyChanged : ChatWords.safetyKey)
+            }
             if model.privacy == .locked {
                 HStack(spacing: Look.Space.hair) {
                     Image(systemName: "lock.fill").font(.system(size: 12, weight: .bold))
@@ -368,6 +391,50 @@ private struct ChatRoomPage: View {
             .disabled(!typed || model.sending)
             .accessibilityLabel(ChatWords.send)
         }
+    }
+}
+
+// MARK: the safety code
+
+private struct SafetySheet: View {
+    let rows: [ChatSafetyRow]
+    let accept: (ChatSafetyRow) -> Void
+
+    private func shown(_ name: String) -> String {
+        switch name {
+        case "@pc": return "Your PC"
+        case "@fingoid": return "Fingoid"
+        default: return ChatListing.shownName(ChatMember(kind: "person", name: name, nick: nil, model: nil))
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Look.Space.snug) {
+                Text(ChatWords.safetyTitle).fx(Look.Size.head, style: .title3).foregroundStyle(Look.Palette.fg)
+                Text(ChatWords.safetyNote).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
+                ForEach(rows) { row in
+                    VStack(alignment: .leading, spacing: Look.Space.hair) {
+                        Text(shown(row.name)).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg)
+                        Text(row.code).font(.system(.title3, design: .monospaced)).foregroundStyle(Look.Palette.fg).textSelection(.enabled)
+                        if row.changed {
+                            Text(ChatWords.safetyChanged).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.now)
+                            Button { accept(row) } label: {
+                                Text(ChatWords.safetyAccept).fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
+                                    .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
+                                    .background(Capsule().fill(Look.Palette.accent))
+                            }
+                            .buttonStyle(BubblePressStyle())
+                        }
+                    }
+                    .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.padY)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .fingusCard(radius: Look.Bubble.radiusCard)
+                }
+            }
+            .padding(Look.Space.gutter)
+        }
+        .fingusGround()
     }
 }
 

@@ -256,6 +256,23 @@ What it does not do yet:
 - Tests: `AeroTests/ChatTests.swift` (formats against themselves, what the server's answers decode to, sides and streaming merge, ordering,
   the failure shape, polling rule, no emojis in the words).
 
+Changes after an outside review of the encryption (2026-10-16): messages are sealed as the exact bytes `JSON.stringify` writes; base64 is
+read strictly (the store's unpadded URL-safe spelling only); a room key must be 32 bytes; the safety code (`roomCrypto.code`) is worked out
+and shown behind a "Safety code" key in each chat, remembered per person, and a different one later is flagged until the person taps "They
+match"; the device's keys are Secure Enclave keys (kept as opaque blobs; ordinary CryptoKit keys only where there is no Secure Enclave), the
+Keychain item is readable only while the phone is unlocked and this phone only, and a Keychain read that fails or a kept device that cannot be
+read stops with the one-shape note and never makes a new device; an account change or a refusal to sign in clears the device, its
+registration, every room key and what was drawn; a Locked close clears every field of the chat and the Locked rows, never puts the draft back,
+and any answer that was on its way is dropped by a generation check after each wait; the session is ephemeral with no cache and holds only the
+web view's cookies that apply to the address. `AeroTests/ChatVectorTests.swift` checks the formats against
+`projects/messages/tests/chat_crypto_vectors.json` (copied to `AeroTests/Fixtures/chat_crypto/vectors.json`): exact bytes where the vector used
+a fixed IV, accept-only for the page's own random-IV outputs, and ECDSA signatures only verified. The `check` job in `aero-ios.yml` now also runs
+`xcodebuild test` on an iPhone simulator, so these tests run for the first time in the cloud.
+
+One thing the app cannot fix: the server's `writing` list in `GET rooms/<id>.json` (`room_writing` in `aero_web.py`) carries the reply being
+written as plain text, outside the room's encryption (the page's encrypted live drafts come through `/events`, which the app does not use). The
+streamed text shown here is therefore plain on the way from Aero, and for Locked chats too. That is the server's to change.
+
 Not checked without a build: that any of it compiles (CryptoKit calls, `while let self`, the SwiftUI layout); that this app's bytes match the
 page's (the same AAD strings, HKDF salt and info, key point and signature forms were copied from `messages.js` and the store, but no page-made
 message has been opened by this code, nor the reverse); that registering a device makes the PC share keys of old chats, and how long it takes;

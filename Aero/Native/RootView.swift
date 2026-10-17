@@ -20,6 +20,7 @@ struct RootView: View {
     @State private var showChat = false
     @State private var webClosed = 0
     @State private var hasAddress = AppInfo.address != nil
+    @State private var addressText = AppInfo.address?.absoluteString ?? ""
     @State private var ready = !DemoMode.isOn
     @Environment(\.scenePhase) private var scenePhase
 
@@ -51,6 +52,7 @@ struct RootView: View {
                         ChatScreen(back: { setChat(false) },
                                    unlock: { showWeb = true },
                                    returned: webClosed)
+                            .id(addressText)      // another address is another chat session: nothing of the last one is kept
                             .transition(.move(edge: .trailing))
                             .zIndex(1)
                     }
@@ -74,6 +76,7 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             hasAddress = AppInfo.address != nil
+            addressText = AppInfo.address?.absoluteString ?? ""
         }
     }
 }
