@@ -350,6 +350,8 @@ enum ChatCrypto {
 protocol ChatKeyStore {
     func load(person: String) throws -> Data?
     func save(_ data: Data, person: String) throws
+    /// Nothing is kept for `person` any more (not an error if nothing was).
+    func forget(person: String) throws
 }
 
 struct KeychainChatKeyStore: ChatKeyStore {
@@ -373,6 +375,11 @@ struct KeychainChatKeyStore: ChatKeyStore {
         return data
     }
 
+    func forget(person: String) throws {
+        let status = SecItemDelete(query(person) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw ChatKeyError.notSaved(status) }
+    }
+
     func save(_ data: Data, person: String) throws {
         var status = SecItemUpdate(query(person) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
@@ -390,6 +397,26 @@ final class MemoryChatKeyStore: ChatKeyStore {
     private var kept: [String: Data] = [:]
     func load(person: String) throws -> Data? { kept[person] }
     func save(_ data: Data, person: String) throws { kept[person] = data }
+    func forget(person: String) throws { kept[person] = nil }
+}
+
+/// The id of the device a renewal put away, kept where the keys are kept until Aero has taken it out of the person's list, so that
+/// a restart in between still knows which entry to take out (kept under its own name beside the person's device, never read as one).
+enum ChatReplaced {
+    static func name(_ person: String) -> String { person + "#replaced" }
+
+    static func remember(_ id: String, person: String, in store: ChatKeyStore) throws {
+        try store.save(Data(id.utf8), person: name(person))
+    }
+
+    static func pending(person: String, in store: ChatKeyStore) -> String? {
+        guard let data = try? store.load(person: name(person)), let id = String(data: data, encoding: .utf8), !id.isEmpty else { return nil }
+        return id
+    }
+
+    static func clear(person: String, in store: ChatKeyStore) {
+        try? store.forget(person: name(person))
+    }
 }
 
 enum ChatDeviceKeeper {
@@ -405,6 +432,9 @@ enum ChatDeviceKeeper {
             case .device(let d): return (d, false, nil)
             case .renew(let old):
                 let made = try ChatDevice.make(person: person)
+                // the old id is kept first: if the app stops between the two, the new device is made again from the old one's
+                // record (still there) and the id is still known
+                try ChatReplaced.remember(old, person: person, in: store)
                 try store.save(try made.kept(), person: person)
                 return (made, true, old)
             }

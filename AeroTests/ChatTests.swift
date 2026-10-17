@@ -269,6 +269,29 @@ final class ChatTests: XCTestCase {
                        "Opening this chat stopped at Aero's answer. Try again.")
     }
 
+    func testRemovingADeviceSaysWhetherLosingItsChatsIsKnown() throws {
+        func json(_ body: ChatAPI.RemoveBody) throws -> [String: Any] {
+            try JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any] ?? [:]
+        }
+        let plain = try json(ChatAPI.RemoveBody(device: "abc12345", loseHistory: false))
+        XCTAssertEqual(plain["device"] as? String, "abc12345")
+        XCTAssertEqual(plain["lose_history"] as? Bool, false)
+        XCTAssertEqual(try json(ChatAPI.RemoveBody(device: "abc12345", loseHistory: true))["lose_history"] as? Bool, true)
+    }
+
+    func testADeviceAeroDoesNotListIsAlreadyGone() {
+        XCTAssertTrue(ChatAPI.alreadyGone(.server("That device isn't in your list.")))
+        // any other answer is not "done": the id is kept and asked again
+        XCTAssertFalse(ChatAPI.alreadyGone(.server("That didn't work. Try again.")))
+        XCTAssertFalse(ChatAPI.alreadyGone(.notSignedIn))
+        // Aero's own 404 words decode to exactly that case
+        XCTAssertEqual(ChatAPI.failure(status: 404, data: Data(#"{"ok":false,"error":"That device isn't in your list."}"#.utf8)), .server(ChatAPI.notInList))
+        // and the refusal that closes a chat for good is a refusal, not "gone"
+        let holds = ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"error":"Only this device can open 1 chat. Removing it closes it for good. Tap again to remove it anyway.","holds":{"rooms":1,"epochs":1}}"#.utf8))
+        XCTAssertNotNil(holds)
+        XCTAssertFalse(ChatAPI.alreadyGone(holds!))
+    }
+
     func testThisAppIsNamedAsAnAppInTheDevicesList() {
         XCTAssertEqual(ChatWords.deviceLabel, "iPhone (Aero app)")
         XCTAssertTrue(ChatWords.deviceLabel.count <= 40)

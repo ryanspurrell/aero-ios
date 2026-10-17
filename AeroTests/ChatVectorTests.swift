@@ -233,6 +233,7 @@ final class ChatVectorTests: XCTestCase {
         var data: Data?
         func load(person: String) throws -> Data? { if let loadError { throw loadError }; return data }
         func save(_ data: Data, person: String) throws { saved += 1 }
+        func forget(person: String) throws {}
     }
 
     func testAFailedReadNeverMakesANewDevice() {
@@ -271,6 +272,20 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertEqual(got.device.ecdhPublic, ChatBase64.encode(e.publicKey.x963Representation))
     }
 
+    func testThePutAwayDevicesIdIsKeptUntilAeroHasTakenItOut() throws {
+        let store = MemoryChatKeyStore()
+        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
+        try ChatReplaced.remember("AAECAwQFBgcICQoL", person: "p1", in: store)
+        // a restart is another look at the same store: it is still known, for the person it was put away for only
+        XCTAssertEqual(ChatReplaced.pending(person: "p1", in: store), "AAECAwQFBgcICQoL")
+        XCTAssertNil(ChatReplaced.pending(person: "p2", in: store))
+        // it is not mistaken for the person's own device
+        XCTAssertNil(try store.load(person: "p1"))
+        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).replaced, nil)
+        ChatReplaced.clear(person: "p1", in: store)
+        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
+    }
+
     func testAKeptDeviceFromTheEarlierBuildIsRenewedAndNamesTheOneItPutAway() throws {
         guard SecureEnclave.isAvailable else { throw XCTSkip("renewing happens only where there is a Secure Enclave (a phone, not the simulator)") }
         let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
@@ -281,6 +296,7 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertTrue(got.renewed)
         // the entry Aero still holds for the old device is named, so it can be taken out of the person's list
         XCTAssertEqual(got.replaced, "AAECAwQFBgcICQoL")
+        XCTAssertEqual(ChatReplaced.pending(person: "p1", in: store), "AAECAwQFBgcICQoL")
         XCTAssertNotEqual(got.device.id, "AAECAwQFBgcICQoL")
         // and it is only named once: the next time the new one is simply kept
         let again = try ChatDeviceKeeper.device(for: "p1", in: store)

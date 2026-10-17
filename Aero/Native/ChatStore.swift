@@ -111,8 +111,6 @@ final class ChatSession {
     private(set) var person = ""
     private var device: ChatDevice?
     private var registered = false
-    /// The id of the device a renewal put away, until Aero has been asked to take it out of the person's list.
-    private var replaced: String?
     /// Room keys opened on this phone, by "<room>|<epoch>". Kept in memory only; the sealed keys stay on the server.
     private(set) var keys: [String: SymmetricKey] = [:]
     /// Changes whenever the account changes or signs out; anything asked before the change is dropped when it answers.
@@ -137,7 +135,6 @@ final class ChatSession {
         flight = nil
         device = nil
         registered = false
-        replaced = nil
         keys = [:]
         me = ""
         person = ""
@@ -177,25 +174,34 @@ final class ChatSession {
         if person.isEmpty { _ = try await loadRooms() }
         let g = generation
         var d = device
+        let firstThisLaunch = d == nil
         if d == nil {
             let kept = try ChatDeviceKeeper.device(for: person, in: keyStore)
             d = kept.device
             if kept.renewed { renewedKeys = true }
-            if let old = kept.replaced { replaced = old }
         }
         guard let d else { throw ChatKeyError.corrupt }
         if !registered {
-            // The put-away device goes first: its keys are gone, so it is of no use to anyone, and while it stays it takes one of the
-            // eight places a new device needs. A network failure keeps it to try again; any other answer (it was never there) ends it.
-            if let old = replaced {
-                do { try await api.removeDevice(old); replaced = nil } catch is URLError { } catch { replaced = nil }
-            }
             try await api.register(device: d, label: ChatWords.deviceLabel)
             guard g == generation else { throw ChatStale() }
             registered = true
         }
         device = d
+        if firstThisLaunch { await takeOutReplaced() }
         return d
+    }
+
+    /// The device a renewal put away, taken out of the person's list once the new one is registered (never before: if registering
+    /// failed, nothing is lost by it still being there). Its keys are gone, so what is locked to it can be opened by nobody and it
+    /// only takes up one of the eight places; Aero is told so (`loseHistory`). The id stays kept until Aero has answered, through a
+    /// restart too, and is tried again the next time.
+    private func takeOutReplaced() async {
+        guard let old = ChatReplaced.pending(person: person, in: keyStore) else { return }
+        let who = person
+        do {
+            try await api.removeDevice(old, loseHistory: true)
+            ChatReplaced.clear(person: who, in: keyStore)
+        } catch { /* kept: asked again next time */ }
     }
 
     func key(room: String, epoch: Int) -> SymmetricKey? { keys["\(room)|\(epoch)"] }

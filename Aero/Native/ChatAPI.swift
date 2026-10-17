@@ -161,11 +161,27 @@ final class ChatAPI {
         _ = try await post("devices", Body(device: device.id, ecdh: device.ecdhPublic, sign: device.signPublic, label: label))
     }
 
-    /// Take one of this person's own devices out of their list in Aero (the entry a renewal put away). Never another person's: Aero answers
-    /// 404 for an id that is not in the signed-in person's list.
-    func removeDevice(_ id: String) async throws {
-        struct Body: Encodable { var device: String }
-        _ = try await post("devices/remove", Body(device: id))
+    /// What Aero says to a device that is not in the person's list: it is already gone, which is what was asked for.
+    static let notInList = "That device isn't in your list."
+
+    static func alreadyGone(_ failure: Failure) -> Bool {
+        if case .server(let words) = failure { return words == notInList }
+        return false
+    }
+
+    struct RemoveBody: Encodable {
+        var device: String
+        /// Aero refuses to remove the only holder of a chat's key unless this is true. Said only for a device this app has put away
+        /// itself: its keys are gone, so what is locked to it can be opened by nobody and keeping it only takes up a place.
+        var loseHistory: Bool
+        enum CodingKeys: String, CodingKey { case device; case loseHistory = "lose_history" }
+    }
+
+    /// Take one of this person's own devices out of their list in Aero. Never another person's: Aero answers 404 for an id that is not
+    /// in the signed-in person's list, which is taken as done.
+    func removeDevice(_ id: String, loseHistory: Bool = false) async throws {
+        do { _ = try await post("devices/remove", RemoveBody(device: id, loseHistory: loseHistory)) }
+        catch let f as Failure where ChatAPI.alreadyGone(f) { return }
     }
 
     struct NewRoom: Encodable {
