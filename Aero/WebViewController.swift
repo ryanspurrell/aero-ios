@@ -125,6 +125,23 @@ extension WebViewController: WKNavigationDelegate {
         }
     }
 
+    /// The page itself answering "not found" or a server error is shown as the failure screen, with "Change address", instead of the bare
+    /// error page, which had no way back to the address (2026-10-17).
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationResponse: WKNavigationResponse,
+        decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void
+    ) {
+        if navigationResponse.isForMainFrame,
+           let http = navigationResponse.response as? HTTPURLResponse,
+           http.statusCode == 404 || http.statusCode >= 500 {
+            decisionHandler(.cancel)
+            showFailure()
+            return
+        }
+        decisionHandler(.allow)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         failureView.isHidden = true
     }

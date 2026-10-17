@@ -4,7 +4,7 @@ import Foundation
 enum AddressChecker {
     /// Each case carries the sentence shown to the person.
     enum Problem: Error {
-        case empty, notHTTPS, invalid, notFound, unreachable, certificate, serverError
+        case empty, notHTTPS, invalid, notFound, notAero, unreachable, certificate, serverError
 
         var message: String {
             switch self {
@@ -20,6 +20,8 @@ enum AddressChecker {
                 return "That server's certificate isn't trusted. Check the address and try again."
             case .serverError:
                 return "The server answered with an error. Try again later."
+            case .notAero:
+                return "That server answered, but Aero isn't at that address. Check the whole address, including anything after the slash."
             }
         }
     }
@@ -48,6 +50,10 @@ enum AddressChecker {
         request.httpMethod = "GET"
         do {
             let (_, response) = try await URLSession.shared.data(for: request)
+            if let http = response as? HTTPURLResponse, http.statusCode == 404 {
+                // a server that answers "not found" at the address has no Aero there (a Tailscale address without /resident, 2026-10-17)
+                return .notAero
+            }
             if let http = response as? HTTPURLResponse, http.statusCode >= 500 {
                 return .serverError
             }
