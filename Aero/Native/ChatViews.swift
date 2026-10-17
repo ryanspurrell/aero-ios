@@ -510,3 +510,41 @@ private struct ChatStoppedNote: View {
         }
     }
 }
+
+/// Chat with no PC set up: the tab is still there, and says why it is empty and what to do (a hidden tab told her nothing, 2026-10-17).
+struct ChatNeedsPCScreen: View {
+    /// Back to the calendar.
+    var back: () -> Void
+    /// Opens the page where the PC's address is set.
+    var connect: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: back) {
+                    HStack(spacing: Look.Space.hair) {
+                        Image(systemName: "chevron.left").font(.system(size: 15, weight: .bold))
+                        Text("Today").fx(Look.Size.tab, style: .subheadline)
+                    }
+                    .foregroundStyle(Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
+                }
+                .accessibilityLabel("Back to today")
+                Spacer()
+            }
+            .padding(.horizontal, Look.Space.gutter)
+            VStack(spacing: Look.Space.snug) {
+                Text(ChatWords.needsPC).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
+                    .multilineTextAlignment(.center)
+                Button(action: connect) {
+                    Text(ChatWords.connectPC).fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
+                        .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
+                        .background(Capsule().fill(Look.Palette.accent))
+                }
+                .buttonStyle(BubblePressStyle())
+            }
+            .padding(Look.Space.gutter)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .fingusGround()
+    }
+}

@@ -28,9 +28,10 @@ struct RootView: View {
         withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { showChat = on }
     }
 
-    /// The Chat tab on the calendar: only with a PC set up, since chats are kept and answered there.
+    /// The Chat tab on the calendar, always there. Chats are kept and answered on the PC, so with none set up it opens a page saying so,
+    /// with the key that connects one (a hidden tab told her nothing, 2026-10-17).
     private var chatOpener: (() -> Void)? {
-        hasAddress ? { setChat(true) } : nil
+        { setChat(true) }
     }
 
     var body: some View {
@@ -48,6 +49,11 @@ struct RootView: View {
                             .id(hasAddress)      // a new set of stores when a PC is set up or removed
                     }
                     // Chat is a page that comes in over the calendar and goes back the same way; the web view is where Face ID unlocks Locked
+                    if showChat && !hasAddress {
+                        ChatNeedsPCScreen(back: { setChat(false) }, connect: { setChat(false); showWeb = true })
+                            .transition(.move(edge: .trailing))
+                            .zIndex(1)
+                    }
                     if showChat && hasAddress {
                         ChatScreen(back: { setChat(false) },
                                    unlock: { showWeb = true },

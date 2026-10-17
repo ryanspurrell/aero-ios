@@ -25,6 +25,8 @@ enum ChatWords {
     static let safetyAccept = "They match"
     static let waitingForKeys = "This chat isn't ready on this phone yet. Your PC is sharing it."
     static let lockedTitle = "Locked chat"
+    static let needsPC = "Chats live on your PC. Connect it to chat here."
+    static let connectPC = "Connect your PC"
 
     static func rowNote(_ unread: String?, locked: Bool) -> String? {
         [locked ? "Locked" : nil, unread].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
