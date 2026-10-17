@@ -20,8 +20,9 @@ struct DayRows: View {
     private var actions: PointerActions { .day(store, open: open) }
 
     var body: some View {
-        let rows = TieOrder.arrange(day.rows, rightToLeft: direction == .rightToLeft)
-        let anytime = TieOrder.arrange(day.anytime, rightToLeft: direction == .rightToLeft)
+        // the home is today's next and what is left: a quiet row (only where a thing went or was due) is the day view's, as on the web home
+        let rows = TieOrder.arrange(day.rows, rightToLeft: direction == .rightToLeft).filter { !(bigNext && Pointer.isQuiet($0.state)) }
+        let anytime = TieOrder.arrange(day.anytime, rightToLeft: direction == .rightToLeft).filter { !(bigNext && Pointer.isQuiet($0.state)) }
         let nextID = bigNext ? TieOrder.firstNext(day.simple, rightToLeft: direction == .rightToLeft) : nil
         VStack(alignment: .leading, spacing: Look.Space.gap) {
             SpineColumn(metrics: metrics, spacing: Look.Space.gap) {

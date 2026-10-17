@@ -87,4 +87,13 @@ final class DayRequirementsTests: XCTestCase {
         XCTAssertNotNil(try phone.store.book().now[other]?.rec["done_at"], "edited to done: it has the time it was done")
         XCTAssertEqual(try phone.store.book().now[other]?.rec["done_ats"]?.arrayValue?.count, 1)
     }
+
+    /// Not run when written. A due-day row of a task moved to an earlier day that has passed says both, and is quiet.
+    func testAPassedEarlyDeferralDueRowSaysBoth() throws {
+        let d = try day(rows: [item("\"id\":\"e1\",\"title\":\"Hand in the form\",\"state\":\"moved\",\"mark_text\":\"Due Friday; moved to Wednesday 4:00 PM\",\"moved_to\":{\"date\":\"2026-10-14\",\"time\":\"16:00\",\"text\":\"Wednesday 4:00 PM\"}")])
+        let p = Pointer(d.rows[0])
+        XCTAssertTrue(p.quiet)
+        XCTAssertEqual(p.meta, "Due Friday; moved to Wednesday 4:00 PM")
+        XCTAssertEqual(p.open?.id, "2026-10-14")
+    }
 }

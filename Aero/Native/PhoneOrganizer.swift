@@ -115,6 +115,8 @@ final class PhoneOrganizer: OrganizerBackend {
             }
         case "reopen":
             rec["status"] = .string(firstStatus(type))
+            // an older record's one done time is kept as an observation
+            if rec["done_ats"] == nil, let at = rec["done_at"] { rec["done_ats"] = .array([at]) }
             for k in ["done_at", "bought_at", "aside"] { rec[k] = nil }
             why = "reopened"
         case "drop":
@@ -140,6 +142,8 @@ final class PhoneOrganizer: OrganizerBackend {
     private func observeDone(_ rec: inout [String: JSONValue]) {
         let at = JSONValue.string(shown(clock()))
         var seen = rec["done_ats"]?.arrayValue ?? (rec["done_at"].map { [$0] } ?? [])
+        // one a day is shown, so one a day is kept (the versions log keeps every time)
+        if let last = seen.last?.stringValue, last.prefix(10) == at.stringValue?.prefix(10) { seen.removeLast() }
         seen.append(at)
         rec["done_ats"] = .array(seen)
         rec["done_at"] = at
