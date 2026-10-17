@@ -58,16 +58,20 @@ enum ChatOpener {
 
 // MARK: the safety code, remembered
 
-/// One person's (or the PC's) safety code in a chat, and whether it differs from the one last accepted.
+/// One person's (or the PC's) safety code in a chat, and where it stands: never compared, compared and the same, or different from the one that
+/// was compared.
 struct ChatSafetyRow: Equatable, Identifiable {
+    enum Status: Equatable { case unchecked, checked, changed }
     var name: String
     var code: String
-    var changed: Bool
+    var status: Status
     var id: String { name }
+    var changed: Bool { status == .changed }
 }
 
-/// The safety codes seen, kept on the phone (a code is a hash of public keys, not a secret). The first code seen for someone is remembered; a
-/// different one later is shown as changed until the person says they have checked it (nothing is accepted silently).
+/// The safety codes the person has compared, kept on the phone (a code is a hash of public keys, not a secret). A code the server gave is
+/// "not compared yet" until the person says it matches; only that yes is remembered, so there is no silent first baseline, and a different code
+/// after it is shown as changed until the person compares again.
 final class ChatSafetyLedger {
     private let defaults: UserDefaults
 
@@ -79,19 +83,20 @@ final class ChatSafetyLedger {
 
     func rows(account: String, devices: [String: [ChatDeviceInfo]]) -> [ChatSafetyRow] {
         devices.keys.sorted().compactMap { name in
-            let list = devices[name] ?? []
-            let code = ChatCrypto.safetyCode(list.map { (ecdh: $0.ecdh, sign: $0.sign) })
+            let code = ChatCrypto.safetyCode((devices[name] ?? []).map { (ecdh: $0.ecdh, sign: $0.sign) })
             guard !code.isEmpty else { return nil }
-            guard let seen = defaults.string(forKey: key(account, name)) else {
-                defaults.set(code, forKey: key(account, name))
-                return ChatSafetyRow(name: name, code: code, changed: false)
-            }
-            return ChatSafetyRow(name: name, code: code, changed: seen != code)
+            guard let accepted = defaults.string(forKey: key(account, name)) else { return ChatSafetyRow(name: name, code: code, status: .unchecked) }
+            return ChatSafetyRow(name: name, code: code, status: accepted == code ? .checked : .changed)
         }
     }
 
     func accept(account: String, name: String, code: String) {
         defaults.set(code, forKey: key(account, name))
+    }
+
+    /// Everything remembered for an account (sign-out).
+    func forget(account: String) {
+        for k in defaults.dictionaryRepresentation().keys where k.hasPrefix("AeroChatSafety|\(account)|") { defaults.removeObject(forKey: k) }
     }
 }
 
@@ -112,6 +117,10 @@ final class ChatSession {
     private(set) var generation = 0
     /// Told when everything held for the old account has been cleared, so the screens clear what they drew.
     var onReset: (() -> Void)?
+    /// This phone's chat keys were replaced because an earlier build had kept them in a way that is no longer used; the person is told.
+    private(set) var renewedKeys = false
+    private var flight: Task<(ChatRoomsAnswer, Int), Error>?
+    private var flightSerial = 0
 
     init(api: ChatAPI = ChatAPI(), keyStore: ChatKeyStore = KeychainChatKeyStore(), safety: ChatSafetyLedger = ChatSafetyLedger()) {
         self.api = api
@@ -122,6 +131,8 @@ final class ChatSession {
     /// The account changed or signed out: the device, its registration, every room key and the cookies are dropped, and the screens told.
     func reset() {
         generation += 1
+        flightSerial += 1
+        flight = nil
         device = nil
         registered = false
         keys = [:]
@@ -136,15 +147,25 @@ final class ChatSession {
         if let f = error as? ChatAPI.Failure, f == .notSignedIn { reset() }
     }
 
-    /// The chats, and who this is (the keys are bound to the person id). A different person than before clears everything held for the last.
-    func loadRooms() async throws -> ChatRoomsAnswer {
+    /// The chats, and who this is (the keys are bound to the person id), with the generation this answer belongs to. Asked once at a time: a
+    /// second call joins the first. A different person than before clears everything held for the last and the answer is the new person's own;
+    /// an answer that was overtaken by a reset (a sign-out, another account) is dropped.
+    func loadRooms() async throws -> (answer: ChatRoomsAnswer, generation: Int) {
+        if let f = flight { return try await f.value }
         let g = generation
-        let got = try await api.rooms()
-        guard g == generation else { throw ChatStale() }
-        if !person.isEmpty && got.person != person { reset() }
-        me = got.me
-        person = got.person
-        return got
+        flightSerial += 1
+        let serial = flightSerial
+        let task = Task { () -> (ChatRoomsAnswer, Int) in
+            defer { if self.flightSerial == serial { self.flight = nil } }
+            let got = try await self.api.rooms()
+            guard g == self.generation else { throw ChatStale() }
+            if !self.person.isEmpty && got.person != self.person { self.reset() }
+            self.me = got.me
+            self.person = got.person
+            return (got, self.generation)
+        }
+        flight = task
+        return try await task.value
     }
 
     /// This phone as a device of this person: made on first use, kept in the Keychain (Secure Enclave keys where there is one), and told to
@@ -152,7 +173,13 @@ final class ChatSession {
     func ensureDevice() async throws -> ChatDevice {
         if person.isEmpty { _ = try await loadRooms() }
         let g = generation
-        let d = try device ?? ChatDeviceKeeper.device(for: person, in: keyStore)
+        var d = device
+        if d == nil {
+            let kept = try ChatDeviceKeeper.device(for: person, in: keyStore)
+            d = kept.device
+            if kept.renewed { renewedKeys = true }
+        }
+        guard let d else { throw ChatKeyError.corrupt }
         if !registered {
             try await api.register(device: d, label: "iPhone")
             guard g == generation else { throw ChatStale() }
@@ -208,35 +235,46 @@ final class ChatListModel: ObservableObject {
     /// The rows to draw. Locked chats are in them only while Locked is open.
     var shown: [ChatRoomRow] { ChatListing.order(rooms, lockedOpen: lockedOpen) }
 
+    /// Changes whenever Locked closes or a new load starts; an answer asked for under an older one is dropped when it arrives.
+    private var loadToken = 0
+
+    /// The notice that this phone's chat keys were renewed, until the person has seen it.
+    var renewedNotice: String? { session.renewedKeys ? ChatWords.keysRenewed : nil }
+
     func load() async {
         stopped = nil
-        let g = session.generation
+        loadToken += 1
+        let token = loadToken
         let open = await session.lockedIsOpen()
-        guard g == session.generation else { return }
-        lockedOpen = open
+        guard token == loadToken else { return }
         do {
             let got = try await session.loadRooms()
-            guard g == session.generation else { return }
-            rooms = got.rooms
+            // dropped if Locked closed, a newer load started, or the account was reset by something else while it was asked
+            guard token == loadToken, got.generation == session.generation else { return }
+            lockedOpen = open
+            rooms = got.answer.rooms
             loaded = true
         } catch is ChatStale {
             return
         } catch {
             session.note(error)
-            guard g == session.generation else { return }
+            guard token == loadToken else { return }
             stopped = ChatStopWords.make(doing: ChatStopWords.loadingList, error: error)
             if let f = error as? ChatAPI.Failure, f == .locked { closeLocked() }
         }
     }
 
-    /// Locked closes (the app went to the background, or Aero said Locked): its rows go at once, before anything is asked, and are not kept.
+    /// Locked closes (the app went to the background, or Aero said Locked): its rows go at once, before anything is asked, and are not kept;
+    /// a load that was already on its way is dropped when it answers.
     func closeLocked() {
+        loadToken += 1
         lockedOpen = false
         rooms = rooms.filter { !$0.locked }
     }
 
     /// Everything drawn for the last account.
     func clear() {
+        loadToken += 1
         rooms = []
         loaded = false
         stopped = nil
@@ -298,6 +336,7 @@ final class ChatRoomModel: ObservableObject {
     var isNew: Bool { roomID == nil }
 
     var keysChanged: Bool { safety.contains { $0.changed } }
+    var allChecked: Bool { !safety.isEmpty && safety.allSatisfy { $0.status == .checked } }
 
     /// Show who said what: speaker names only where more than you and one reply are in the chat.
     private var showSpeakers: Bool { members.filter { $0.kind == "person" }.count > 1 || members.filter { $0.kind != "person" }.count > 1 }
@@ -338,9 +377,14 @@ final class ChatRoomModel: ObservableObject {
         members = answer.members
         for (name, list) in answer.devices { devices[name] = list }
         holders = answer.holders ?? holders
-        writing = answer.writing ?? []
         for m in answer.messages { wire[m.seq] = m; lastSeq = max(lastSeq, m.seq) }
         session.openKeys(answer, device: device)
+        // the words so far of a reply come sealed (`live`); only what opens under the room key with the exact additional data is shown
+        writing = (answer.writing ?? []).map { w in
+            var said: String?
+            if let live = w.live, let key = session.key(room: id, epoch: live.epoch) { said = try? ChatCrypto.openLive(room: id, live: live, key: key) }
+            return ChatWriting(name: w.name, text: said, stage: w.stage)
+        }
         if let name = answer.name, !name.isEmpty { title = name }
         safety = session.safety.rows(account: session.person, devices: devices)
         redraw(id, locked: answer.locked || privacy == .locked, t)

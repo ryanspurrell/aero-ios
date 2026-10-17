@@ -105,8 +105,26 @@ struct ChatWireMessage: Codable, Equatable {
     enum CodingKeys: String, CodingKey { case seq, kind, sender, device, at, epoch, iv, ct, sig, note; case senderID = "sender_id" }
 }
 
-/// A reply being written now, as far as it has got (`writing` in GET /rooms/<id>.json, the same words the page draws as a reply streams in).
-struct ChatWriting: Codable, Equatable {
+/// A reply being written now, as the room route lists it: never its words as text. `live` is the words so far sealed with the room's key (the
+/// same shape as the page's live draft: AES-GCM, additional data "room|epoch|sender|device", not signed), absent when there are none or the PC
+/// cannot seal them; `stage` is a plain mark of what it is doing.
+struct ChatLiveWire: Codable, Equatable {
+    var room: String?
+    var sender: String
+    var device: String
+    var epoch: Int
+    var iv: String
+    var ct: String
+}
+
+struct ChatWritingWire: Codable, Equatable {
+    var name: String
+    var live: ChatLiveWire?
+    var stage: String?
+}
+
+/// A reply being written, as drawn: `text` is only what was opened and authenticated from `live` (nil when nothing could be opened).
+struct ChatWriting: Equatable {
     var name: String
     var text: String?
     var stage: String?
@@ -124,7 +142,7 @@ struct ChatRoomAnswer: Codable, Equatable {
     var seals: [ChatSeal]
     var devices: [String: [ChatDeviceInfo]]
     var holders: [String: String]?
-    var writing: [ChatWriting]?
+    var writing: [ChatWritingWire]?
     var me: String?
     enum CodingKeys: String, CodingKey { case id, name, epoch, ai, members, messages, seals, devices, holders, writing, me; case isLocked = "private" }
 
@@ -174,8 +192,10 @@ enum ChatTranscript {
         }
         let lastReply = out.last(where: { $0.side == .theirs })?.text
         for w in writing {
-            let text = (w.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            if !text.isEmpty, text == lastReply { continue }
+            let said = (w.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !said.isEmpty, said == lastReply { continue }
+            // with no authenticated words, only the stage mark (what it is doing) is shown, until the finished message arrives
+            let text = said.isEmpty ? (w.stage ?? "").trimmingCharacters(in: .whitespacesAndNewlines) : said
             out.append(ChatLine(id: "writing-\(w.name)", side: .theirs, speaker: showSpeakers ? shown(w.name) : nil, text: text, at: nil, streaming: true, unreadable: false))
         }
         return out

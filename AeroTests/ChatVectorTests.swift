@@ -64,11 +64,14 @@ final class ChatVectorTests: XCTestCase {
 
     func testSealsAreTheExactBytesAndOpenToTheRoomKeys() throws {
         let people = ["alice": try device("alice"), "bob": try device("bob")]
-        for seal in (v["seals"] as? [[String: Any]]) ?? [] {
+        let seals = try XCTUnwrap(v["seals"] as? [[String: Any]], "the vectors have no seals")
+        XCTAssertEqual(seals.count, 4, "all four seals are checked")
+        for seal in seals {
             let sent = dict(seal["as_sent"])
             let epoch = (sent["epoch"] as? Int) ?? -1
             let sealer = try XCTUnwrap(people[str(seal, "sealed_by")])
             let to = try XCTUnwrap(people.values.first { $0.id == str(sent, "device") })
+            XCTAssertEqual(ChatCrypto.aad(room: room, epoch: epoch, person: str(sent, "person"), device: str(sent, "device")), str(seal, "aad"), "a seal's additional data")
             let made = try ChatCrypto.seal(room: room, epoch: epoch, key: roomKey(epoch), to: [ChatDeviceKeys(device: to.id, ecdh: to.ecdhPublic, personID: str(sent, "person"))],
                                            person: sealer.person, from: sealer, ivs: [try XCTUnwrap(ChatBase64.decode(str(sent, "iv")))])
             XCTAssertEqual(made.first?.iv, str(sent, "iv"))
@@ -100,8 +103,11 @@ final class ChatVectorTests: XCTestCase {
 
     func testEveryMessageIsTheExactBytesAndItsSignatureVerifies() throws {
         let people = ["person-alice-0001": try device("alice"), "person-bob-0002": try device("bob")]
-        for m in (v["messages"] as? [[String: Any]]) ?? [] {
+        let messages = try XCTUnwrap(v["messages"] as? [[String: Any]], "the vectors have no messages")
+        XCTAssertEqual(messages.map { str($0, "name") }, ["alice_plain", "bob_unicode_and_extras", "alice_after_key_change"])
+        for m in messages {
             let name = str(m, "name")
+            XCTAssertEqual(ChatCrypto.aad(room: room, epoch: (m["epoch"] as? Int) ?? -1, person: str(m, "sender_id"), device: str(m, "device")), str(m, "aad"), name)
             let epoch = (m["epoch"] as? Int) ?? -1
             let sender = try XCTUnwrap(people[str(m, "sender_id")])
             let json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(str(m, "plaintext_json").utf8)) as? [String: Any])
@@ -143,9 +149,18 @@ final class ChatVectorTests: XCTestCase {
 
     func testLiveAndNotesBoxesOpenWithTheirAads() throws {
         let live = dict(v["live"])
+        XCTAssertFalse(live.isEmpty, "the vectors have no live entry")
+        XCTAssertEqual(ChatCrypto.liveAAD(room: room, epoch: (live["epoch"] as? Int) ?? -1, sender: str(live, "sender"), device: str(live, "device")), str(live, "aad"))
+        let wire = ChatLiveWire(room: room, sender: str(live, "sender"), device: str(live, "device"), epoch: (live["epoch"] as? Int) ?? -1, iv: str(live, "iv"), ct: str(live, "ct"))
+        XCTAssertEqual(try ChatCrypto.openLive(room: room, live: wire, key: roomKey(0)), "Hello Bo")
+        var other = wire; other.sender = "someone"
+        XCTAssertThrowsError(try ChatCrypto.openLive(room: room, live: other, key: roomKey(0)))
+        var elsewhere = wire; elsewhere.room = "rother"
+        XCTAssertNil(try ChatCrypto.openLive(room: room, live: elsewhere, key: roomKey(0)))
         let l = try ChatCrypto.openSealed(iv: str(live, "iv"), ct: str(live, "ct"), key: roomKey(0), aad: str(live, "aad"))
         XCTAssertEqual(l["d"] as? String, "Hello Bo")
         let box = dict(v["box"])
+        XCTAssertFalse(box.isEmpty, "the vectors have no notes box")
         let b = try ChatCrypto.openSealed(iv: str(box, "iv"), ct: str(box, "ct"), key: roomKey(0), aad: str(box, "aad"))
         XCTAssertEqual(b["text"] as? String, "Invented room note.")
         XCTAssertThrowsError(try ChatCrypto.openSealed(iv: str(live, "iv"), ct: str(live, "ct"), key: roomKey(0), aad: "\(room)|0|fingus|other"))
@@ -166,19 +181,25 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertEqual(ChatCrypto.safetyCode([]), "")
     }
 
-    func testAChangedCodeIsFlaggedUntilItIsAccepted() throws {
+    func testACodeIsNotCheckedUntilTheyCompareThenChangedIfItDiffers() throws {
         let suite = "chat-safety-test-\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let ledger = ChatSafetyLedger(defaults: defaults)
         let alice = try device("alice"), bob = try device("bob")
         func info(_ d: ChatDevice) -> ChatDeviceInfo { ChatDeviceInfo(device: d.id, ecdh: d.ecdhPublic, sign: d.signPublic) }
-        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(bob)]]).map(\.changed), [false])
-        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(bob)]]).map(\.changed), [false])
+        // the first sight is not a baseline: it stays unchecked however often it is seen
+        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(bob)]]).map(\.status), [.unchecked])
+        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(bob)]]).map(\.status), [.unchecked])
+        let first = ledger.rows(account: "me", devices: ["sam": [info(bob)]])[0]
+        ledger.accept(account: "me", name: "sam", code: first.code)
+        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(bob)]]).map(\.status), [.checked])
         let changed = ledger.rows(account: "me", devices: ["sam": [info(alice)]])
-        XCTAssertEqual(changed.map(\.changed), [true])
+        XCTAssertEqual(changed.map(\.status), [.changed])
         ledger.accept(account: "me", name: "sam", code: changed[0].code)
-        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(alice)]]).map(\.changed), [false])
+        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(alice)]]).map(\.status), [.checked])
+        ledger.forget(account: "me")
+        XCTAssertEqual(ledger.rows(account: "me", devices: ["sam": [info(alice)]]).map(\.status), [.unchecked])
     }
 
     // MARK: spelling
@@ -230,12 +251,23 @@ final class ChatVectorTests: XCTestCase {
 
     func testTheDeviceIsMadeOnlyWhenNothingIsKeptAndComesBackTheSame() throws {
         let store = MemoryChatKeyStore()
-        let first = try ChatDeviceKeeper.device(for: "p1", in: store)
-        let again = try ChatDeviceKeeper.device(for: "p1", in: store)
+        let first = try ChatDeviceKeeper.device(for: "p1", in: store).device
+        let again = try ChatDeviceKeeper.device(for: "p1", in: store).device
         XCTAssertEqual(first.id, again.id)
         XCTAssertEqual(first.ecdhPublic, again.ecdhPublic)
         XCTAssertEqual(first.signPublic, again.signPublic)
-        XCTAssertNotEqual(try ChatDeviceKeeper.device(for: "p2", in: store).id, first.id)
+        XCTAssertNotEqual(try ChatDeviceKeeper.device(for: "p2", in: store).device.id, first.id)
+    }
+
+    func testAKeptDeviceFromTheEarlierBuildStillWorksWhereThereIsNoSecureEnclave() throws {
+        guard !SecureEnclave.isAvailable else { throw XCTSkip("a phone with a Secure Enclave renews it instead") }
+        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
+        let old = #"{"id":"AAECAwQFBgcICQoL","ecdh":"\#(ChatBase64.encode(e.rawRepresentation))","sign":"\#(ChatBase64.encode(s.rawRepresentation))"}"#
+        let store = MemoryChatKeyStore()
+        try store.save(Data(old.utf8), person: "p1")
+        let got = try ChatDeviceKeeper.device(for: "p1", in: store)
+        XCTAssertFalse(got.renewed)
+        XCTAssertEqual(got.device.ecdhPublic, ChatBase64.encode(e.publicKey.x963Representation))
     }
 
     // MARK: cookies, the account and Locked

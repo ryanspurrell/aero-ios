@@ -33,7 +33,8 @@ final class ChatAPI {
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.httpShouldSetCookies = true
+        // cookies are never taken from or put into a storage: each request carries the ones chosen for it (`prepared`)
+        config.httpShouldSetCookies = false
         config.httpCookieAcceptPolicy = .never
         return URLSession(configuration: config)
     }
@@ -42,10 +43,8 @@ final class ChatAPI {
         self.session = session ?? ChatAPI.isolatedSession()
     }
 
-    /// Sign-out or another account or address: the cookies this session holds are dropped.
-    func forgetCookies() {
-        if let storage = session.configuration.httpCookieStorage { for c in storage.cookies ?? [] { storage.deleteCookie(c) } }
-    }
+    /// Nothing is kept between requests (see `prepared`), so there is nothing to drop; kept so that a reset reads the same everywhere.
+    func forgetCookies() {}
 
     /// The cookies of a set that a request to `url` would carry: same host (or a parent domain of it), a path that covers it, and secure ones
     /// only over https.
@@ -70,19 +69,18 @@ final class ChatAPI {
         return parts?.url
     }
 
-    private func endpoint(_ path: String, _ query: [String: String] = [:]) throws -> URL {
-        guard let base = AppInfo.address else { throw Failure.noAddress }
-        guard let url = ChatAPI.url(base: base, path: path, query: query) else { throw Failure.noAddress }
-        return url
-    }
-
-    /// Replace what the session holds with the web view's cookies that apply to the address: a cookie the web view no longer has is gone here too.
+    /// One request bound, at the start of the call, to one address and the web view's cookies that apply to it: the address is read once, the
+    /// cookies are read from the web view right then and sent in this request's own header, and if the address changed while they were read
+    /// the call stops, so a request can never go to one address with another's cookies.
     @MainActor
-    private func shareCookies() async {
-        guard let base = AppInfo.address, let storage = session.configuration.httpCookieStorage else { return }
-        let fresh = ChatAPI.applicable(await WKWebsiteDataStore.default().httpCookieStore.allCookies(), to: base)
-        for c in storage.cookies ?? [] { storage.deleteCookie(c) }
-        for c in fresh { storage.setCookie(c) }
+    private func prepared(_ path: String, _ query: [String: String]) async throws -> URLRequest {
+        guard let base = AppInfo.address, let url = ChatAPI.url(base: base, path: path, query: query) else { throw Failure.noAddress }
+        let cookies = ChatAPI.applicable(await WKWebsiteDataStore.default().httpCookieStore.allCookies(), to: url)
+        guard AppInfo.address == base else { throw Failure.noAddress }
+        var request = URLRequest(url: url)
+        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        for (field, value) in HTTPCookie.requestHeaderFields(with: cookies) { request.setValue(value, forHTTPHeaderField: field) }
+        return request
     }
 
     /// What the server said when it refused: the Locked answer, a sign-in problem, or its own words.
@@ -96,24 +94,21 @@ final class ChatAPI {
     }
 
     private func run(_ request: URLRequest) async throws -> Data {
-        await shareCookies()
         let (data, response) = try await session.data(for: request)
         if let http = response as? HTTPURLResponse, let failure = ChatAPI.failure(status: http.statusCode, data: data) { throw failure }
         return data
     }
 
     private func get<Answer: Decodable>(_ path: String, _ query: [String: String] = [:], as type: Answer.Type) async throws -> Answer {
-        var request = URLRequest(url: try endpoint(path, query))
+        var request = try await prepared(path, query)
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         let data = try await run(request)
         do { return try decoder.decode(Answer.self, from: data) } catch { throw Failure.unreadable }
     }
 
     private func post<Body: Encodable>(_ path: String, _ body: Body) async throws -> Data {
-        var request = URLRequest(url: try endpoint(path))
+        var request = try await prepared(path, [:])
         request.httpMethod = "POST"
-        request.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
         return try await run(request)

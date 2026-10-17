@@ -269,9 +269,16 @@ web view's cookies that apply to the address. `AeroTests/ChatVectorTests.swift` 
 a fixed IV, accept-only for the page's own random-IV outputs, and ECDSA signatures only verified. The `check` job in `aero-ios.yml` now also runs
 `xcodebuild test` on an iPhone simulator, so these tests run for the first time in the cloud.
 
-One thing the app cannot fix: the server's `writing` list in `GET rooms/<id>.json` (`room_writing` in `aero_web.py`) carries the reply being
-written as plain text, outside the room's encryption (the page's encrypted live drafts come through `/events`, which the app does not use). The
-streamed text shown here is therefore plain on the way from Aero, and for Locked chats too. That is the server's to change.
+Round 2 (2026-10-16, after the outside fix-check): the reply being written comes in the room route's `writing[].live`, the words so far sealed
+with the room key as the page's live drafts are (additional data `room|epoch|sender|device`, not signed); the app opens it with exactly that
+data and shows only text that authenticated, and with none shows the `stage` mark alone until the finished message arrives. This needs the server
+change on branch `room-writing-sealed`; against a server that still sends plain `writing.text`, the app ignores that field. The first safety
+code for someone is "not compared yet" until the person taps "They match" (nothing is remembered silently). Chat keys and drawn state are
+cleared when the web view closes (it may have signed out or into another account), when Chat is left, and when the address changes. A Keychain
+item made by the first build is moved to the unlocked-only class; raw keys from that build are replaced by a Secure Enclave device on a phone
+that has one (the person is told, and the new device is registered), and raw keys are used only where there is no Secure Enclave. A list load
+is dropped if Locked closes while it is on its way; rooms are asked for one at a time, and a new account's own answer is kept. Each request is
+bound at its start to one address and the cookies read for it, sent in its own header.
 
 Not checked without a build: that any of it compiles (CryptoKit calls, `while let self`, the SwiftUI layout); that this app's bytes match the
 page's (the same AAD strings, HKDF salt and info, key point and signature forms were copied from `messages.js` and the store, but no page-made

@@ -16,6 +16,8 @@ enum ChatWords {
     static let lockedNeedsUnlock = "Locked chats open once Aero has unlocked with Face ID."
     static let unlockKey = "Unlock in Aero"
     static let lockedShut = "This chat is Locked."
+    static let keysRenewed = "This phone's chat keys were renewed. Older chats may take a moment to open again."
+    static let safetyUnchecked = "You haven't compared these numbers yet."
     static let safetyKey = "Safety code"
     static let safetyTitle = "Safety code"
     static let safetyNote = "Read these numbers to the person, or have them read theirs to you. If they are the same on both phones, the keys are the right ones."

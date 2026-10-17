@@ -38,6 +38,8 @@ struct ChatScreen: View {
             }
         }
         .fingusGround()
+        // leaving Chat (or another address): the keys and everything drawn go with it
+        .onDisappear { session.session.reset() }
         .sheet(isPresented: $choosing) {
             if let list {
                 StartChatSheet(lockedOpen: list.lockedOpen, unlock: { choosing = false; unlock() }) { privacy in
@@ -59,7 +61,11 @@ struct ChatScreen: View {
             }
             await list?.load()
         }
-        .onChange(of: returned) { _ in Task { await list?.load() } }
+        // the web view was open: it may have signed out or into another account, so nothing held for the last one is kept
+        .onChange(of: returned) { _ in
+            session.session.reset()
+            Task { await list?.load() }
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 Task { await list?.load() }
@@ -121,6 +127,9 @@ private struct ChatListPage: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Look.Space.snug) {
                     Text(ChatWords.listTitle).fx(Look.Size.title, style: .title2).foregroundStyle(Look.Palette.fg)
+                    if let notice = model.renewedNotice {
+                        Text(notice).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
+                    }
                     if let stopped = model.stopped {
                         ChatStoppedNote(stopped: stopped, key: { Task { await model.load() } })
                     }
@@ -261,12 +270,12 @@ private struct ChatRoomPage: View {
             if model.phase == .ready && !model.safety.isEmpty {
                 Button { showSafety = true } label: {
                     HStack(spacing: Look.Space.hair) {
-                        Image(systemName: model.keysChanged ? "exclamationmark.shield" : "checkmark.shield").font(.system(size: 13, weight: .bold))
+                        Image(systemName: model.keysChanged ? "exclamationmark.shield" : (model.allChecked ? "checkmark.shield" : "shield")).font(.system(size: 13, weight: .bold))
                         Text(ChatWords.safetyKey).fx(Look.Size.pill, style: .footnote)
                     }
                     .foregroundStyle(model.keysChanged ? Look.Palette.now : Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
                 }
-                .accessibilityLabel(model.keysChanged ? ChatWords.safetyChanged : ChatWords.safetyKey)
+                .accessibilityLabel(model.keysChanged ? ChatWords.safetyChanged : (model.allChecked ? ChatWords.safetyKey : ChatWords.safetyUnchecked))
             }
             if model.privacy == .locked {
                 HStack(spacing: Look.Space.hair) {
@@ -417,8 +426,8 @@ private struct SafetySheet: View {
                     VStack(alignment: .leading, spacing: Look.Space.hair) {
                         Text(shown(row.name)).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg)
                         Text(row.code).font(.system(.title3, design: .monospaced)).foregroundStyle(Look.Palette.fg).textSelection(.enabled)
-                        if row.changed {
-                            Text(ChatWords.safetyChanged).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.now)
+                        if row.status != .checked {
+                            Text(row.changed ? ChatWords.safetyChanged : ChatWords.safetyUnchecked).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(row.changed ? Look.Palette.now : Look.Palette.soft)
                             Button { accept(row) } label: {
                                 Text(ChatWords.safetyAccept).fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
                                     .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)

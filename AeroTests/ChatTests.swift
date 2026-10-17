@@ -92,13 +92,14 @@ final class ChatTests: XCTestCase {
          "messages":[{"seq":1,"kind":"note","sender":"","device":null,"at":1.5,"epoch":null,"iv":null,"ct":null,"sig":null,"note":"Aryn started this"}],
          "seals":[{"epoch":0,"by_person":"p1","by_device":"dA","iv":"aaaa","ct":"bbbb"}],
          "devices":{"@pc":[{"device":"pc","ecdh":"x","sign":"y","label":"","added":1,"private":0},{"device":"d2","ecdh":"x2","sign":"y2","private":true}]},
-         "writing":[{"name":"fingus","text":"Sure, here is","stage":"","work":[]}],
+         "writing":[{"name":"fingus","live":{"room":"r1","kind":"model","sender":"fingus","device":"pc","epoch":0,"iv":"aaaa","ct":"bbbb"},"stage":"","work":[]},{"name":"x","live":null,"stage":"thinking"}],
          "holders":{}}
         """
         let a = try JSONDecoder().decode(ChatRoomAnswer.self, from: Data(json.utf8))
         XCTAssertEqual(a.epoch, 2)
         XCTAssertEqual(a.seals.first?.byDevice, "dA")
-        XCTAssertEqual(a.writing?.first?.text, "Sure, here is")
+        XCTAssertEqual(a.writing?.first?.live?.sender, "fingus")
+        XCTAssertNil(a.writing?.last?.live)
         XCTAssertEqual(a.messages.first?.note, "Aryn started this")
         // the store keeps `private` as 0 or 1; either form is read
         XCTAssertEqual(a.devices["@pc"]?.map { $0.isPrivate ?? false }, [false, true])
@@ -142,6 +143,12 @@ final class ChatTests: XCTestCase {
                                         writing: [ChatWriting(name: "fingus", text: "Sure, here", stage: nil)], showSpeakers: false, shown: { $0 })
         XCTAssertEqual(both.count, 2)
         XCTAssertEqual(both.filter(\.streaming).count, 0)
+    }
+
+    func testWithNoAuthenticatedWordsOnlyTheStageMarkIsShown() {
+        let l = ChatTranscript.lines(entries: [], me: "owner", writing: [ChatWriting(name: "fingus", text: nil, stage: "thinking")], showSpeakers: false, shown: { $0 })
+        XCTAssertEqual(l.first?.text, "thinking")
+        XCTAssertEqual(l.first?.streaming, true)
     }
 
     func testAReplyThatHasNotSaidAnythingYetIsStillALine() {

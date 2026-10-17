@@ -101,16 +101,33 @@ struct ChatDevice {
         return software(person: person, id: id, ecdh: P256.KeyAgreement.PrivateKey(), sign: P256.Signing.PrivateKey())
     }
 
-    /// The device that was kept. Throws, and never returns a different one, when what is kept cannot be read as a device.
-    static func restore(person: String, from data: Data) throws -> ChatDevice {
-        guard let k = try? JSONDecoder().decode(Kept.self, from: data), k.v == 1,
-              let e = ChatBase64.decode(k.ecdh), let s = ChatBase64.decode(k.sign) else { throw ChatKeyError.corrupt }
+    /// What `restore` found.
+    enum Restored {
+        case device(ChatDevice)
+        /// A device kept by an earlier build (raw keys, no Secure Enclave) on a phone that has a Secure Enclave: it is to be replaced, not used.
+        case renew
+    }
+
+    /// The device that was kept. Throws, and never returns a different one, when what is kept cannot be read as a device. Raw (software) keys
+    /// are used only where there is no Secure Enclave; where there is one they are reported as to be renewed.
+    static func restore(person: String, from data: Data) throws -> Restored {
+        struct Legacy: Codable { var id: String; var ecdh: String; var sign: String }
+        var kind = "", id = "", ecdhText = "", signText = ""
+        if let k = try? JSONDecoder().decode(Kept.self, from: data), k.v == 1 {
+            kind = k.kind; id = k.id; ecdhText = k.ecdh; signText = k.sign
+        } else if let l = try? JSONDecoder().decode(Legacy.self, from: data) {
+            kind = "software"; id = l.id; ecdhText = l.ecdh; signText = l.sign
+        } else {
+            throw ChatKeyError.corrupt
+        }
+        guard let e = ChatBase64.decode(ecdhText), let s = ChatBase64.decode(signText) else { throw ChatKeyError.corrupt }
         do {
-            switch k.kind {
+            switch kind {
             case "software":
-                return software(person: person, id: k.id, ecdh: try P256.KeyAgreement.PrivateKey(rawRepresentation: e), sign: try P256.Signing.PrivateKey(rawRepresentation: s))
+                if SecureEnclave.isAvailable { return .renew }
+                return .device(software(person: person, id: id, ecdh: try P256.KeyAgreement.PrivateKey(rawRepresentation: e), sign: try P256.Signing.PrivateKey(rawRepresentation: s)))
             case "enclave":
-                return enclave(person: person, id: k.id, ecdh: try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: e), sign: try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: s))
+                return .device(enclave(person: person, id: id, ecdh: try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: e), sign: try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: s)))
             default:
                 throw ChatKeyError.corrupt
             }
@@ -190,7 +207,7 @@ enum ChatCrypto {
     /// (`by_device` in the seal, found in the answer's `devices`).
     static func unseal(room: String, seal: ChatSeal, sealerEcdh: String, device: ChatDevice) throws -> SymmetricKey {
         let key = try kek(device: device, theirs: sealerEcdh, room: room, epoch: seal.epoch)
-        let raw = try unlock(iv: seal.iv, ct: seal.ct, key: key, aad: "\(room)|\(seal.epoch)|\(device.person)|\(device.id)")
+        let raw = try unlock(iv: seal.iv, ct: seal.ct, key: key, aad: aad(room: room, epoch: seal.epoch, person: device.person, device: device.id))
         return try roomKey(raw)
     }
 
@@ -202,7 +219,7 @@ enum ChatCrypto {
         for (i, d) in devices.enumerated() {
             let person = d.personID ?? fallback
             let wrap = try kek(device: device, theirs: d.ecdh, room: room, epoch: epoch)
-            let sealed = try lock(raw, key: wrap, aad: "\(room)|\(epoch)|\(person)|\(d.device)", iv: ivs?[i])
+            let sealed = try lock(raw, key: wrap, aad: aad(room: room, epoch: epoch, person: person, device: d.device), iv: ivs?[i])
             out.append(ChatSealOut(epoch: epoch, person: person, device: d.device, iv: ChatBase64.encode(sealed.iv), ct: ChatBase64.encode(sealed.ct)))
         }
         return out
@@ -251,7 +268,7 @@ enum ChatCrypto {
 
     /// Seal a message under the room's key, signed by this device (the page's `encrypt`). `iv` is for tests only.
     static func encrypt(room: String, epoch: Int, key: SymmetricKey, text: String, extra: [(String, Int)] = [], device: ChatDevice, iv: Data? = nil) throws -> ChatSealed {
-        let sealed = try lock(plaintext(text: text, extra: extra), key: key, aad: "\(room)|\(epoch)|\(device.person)|\(device.id)", iv: iv)
+        let sealed = try lock(plaintext(text: text, extra: extra), key: key, aad: aad(room: room, epoch: epoch, person: device.person, device: device.id), iv: iv)
         let ivs = ChatBase64.encode(sealed.iv), ct = ChatBase64.encode(sealed.ct)
         let sig = try device.signRaw(signedPart(room: room, epoch: epoch, sender: device.person, device: device.id, iv: ivs, ct: ct))
         return ChatSealed(iv: ivs, ct: ct, sig: ChatBase64.encode(sig))
@@ -269,7 +286,7 @@ enum ChatCrypto {
     static func open(room: String, epoch: Int, sender: String, device: String, iv: String, ct: String, sig: String, key: SymmetricKey, signPublic: String) throws -> [String: Any] {
         guard ChatBase64.decode(iv) != nil, ChatBase64.decode(ct) != nil, ChatBase64.decode(sig) != nil, ChatBase64.decode(signPublic) != nil else { throw ChatCryptoError.badEncoding }
         guard verify(signPublic: signPublic, sig: sig, signed: signedPart(room: room, epoch: epoch, sender: sender, device: device, iv: iv, ct: ct)) else { throw ChatCryptoError.notVerified }
-        let plain = try unlock(iv: iv, ct: ct, key: key, aad: "\(room)|\(epoch)|\(sender)|\(device)")
+        let plain = try unlock(iv: iv, ct: ct, key: key, aad: aad(room: room, epoch: epoch, person: sender, device: device))
         guard let body = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { throw ChatCryptoError.cannotOpen }
         return body
     }
@@ -280,6 +297,20 @@ enum ChatCrypto {
         let plain = try unlock(iv: iv, ct: ct, key: key, aad: aad)
         guard let body = try? JSONSerialization.jsonObject(with: plain) as? [String: Any] else { throw ChatCryptoError.cannotOpen }
         return body
+    }
+
+    /// The additional data of a seal or a message: "room|epoch|person|device" (a seal's person is the one it is sealed to; a message's the sender).
+    static func aad(room: String, epoch: Int, person: String, device: String) -> String { "\(room)|\(epoch)|\(person)|\(device)" }
+
+    /// The additional data of a live payload: "room|epoch|sender|device" (the sender's name, and the PC's device).
+    static func liveAAD(room: String, epoch: Int, sender: String, device: String) -> String { "\(room)|\(epoch)|\(sender)|\(device)" }
+
+    /// The words so far of a reply being written, only if they open under the room key with exactly that additional data. nil when the payload
+    /// is another kind (a typing mark, an activity) or names another room.
+    static func openLive(room: String, live: ChatLiveWire, key: SymmetricKey) throws -> String? {
+        if let named = live.room, named != room { return nil }
+        let body = try openSealed(iv: live.iv, ct: live.ct, key: key, aad: liveAAD(room: room, epoch: live.epoch, sender: live.sender, device: live.device))
+        return body["d"] as? String
     }
 
     // MARK: the safety code
@@ -335,6 +366,9 @@ struct KeychainChatKeyStore: ChatKeyStore {
         let status = SecItemCopyMatching(q as CFDictionary, &out)
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess, let data = out as? Data else { throw ChatKeyError.unreadable(status) }
+        // an item made by an earlier build was readable after the first unlock; it is moved to unlocked-only
+        let moved = SecItemUpdate(query(person) as CFDictionary, [kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly] as CFDictionary)
+        guard moved == errSecSuccess else { throw ChatKeyError.notSaved(moved) }
         return data
     }
 
@@ -358,12 +392,22 @@ final class MemoryChatKeyStore: ChatKeyStore {
 }
 
 enum ChatDeviceKeeper {
-    /// This phone's device for `person`: the one kept, or, only when nothing at all is kept, a new one made and kept before it is used. A
-    /// failed read or a kept device that cannot be read throws; it is never replaced. Two people signing in on one phone are two devices.
-    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> ChatDevice {
-        if let data = try store.load(person: person) { return try ChatDevice.restore(person: person, from: data) }
+    /// This phone's device for `person`, and whether it was just renewed. The one kept; or, only when nothing at all is kept, a new one made and
+    /// kept before it is used; or, when an earlier build kept raw keys on a phone that has a Secure Enclave, a new Secure Enclave device kept in
+    /// its place (`renewed`, which the person is told, and which is registered like any new device). A failed read or a kept device that
+    /// cannot be read throws; it is never replaced.
+    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> (device: ChatDevice, renewed: Bool) {
+        if let data = try store.load(person: person) {
+            switch try ChatDevice.restore(person: person, from: data) {
+            case .device(let d): return (d, false)
+            case .renew:
+                let made = try ChatDevice.make(person: person)
+                try store.save(try made.kept(), person: person)
+                return (made, true)
+            }
+        }
         let made = try ChatDevice.make(person: person)
         try store.save(try made.kept(), person: person)
-        return made
+        return (made, false)
     }
 }
