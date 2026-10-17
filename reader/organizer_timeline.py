@@ -205,15 +205,20 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                 rule = rrulestr(rec["repeat"], dtstart=local(rec["start"]))
                 times = rule.between(start, stop, inc=True)[:ITEMS_MAX]
             except (ValueError, TypeError):
-                times = []
+                rule, times = None, []
             done_until = local(rec.get("done_until")) if rec.get("done_until") else None
+            rep_timed = rec.get("start_timed") is True          # an hour given as 00:00 is a time, not a date alone
             for o in times:
                 ticked = bool(done_until and o <= done_until)
                 if (o.date() < today or (held and o < held)) and not ticked:
                     continue                                     # a past time nobody ticked: not claimed either way
-                put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (o.hour or o.minute) else "", state="done" if ticked else "open",
+                put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (rep_timed or o.hour or o.minute) else "", state="done" if ticked else "open",
                            done_at=_hm(done_until) if ticked and done_until and done_until.date() == o.date() and (done_until.hour or done_until.minute) else "",
                            repeat=True, question=q, **look))
+            if held and rule is not None and held.date() >= today and first <= held.date() <= last and not rule.between(held, held, inc=True):
+                # put off to a time the schedule does not have: it is there at that time (the times before it wait, the next one is as scheduled)
+                put(_entry("organizer", kind, key, title, held.date(), _hm(held) if d.get("timed", True) else "", repeat=True, question=q,
+                           mark="moved_from", mark_text="Moved", **look))
             continue
         # done is a dated observation that accumulates (Aryn, 2026-10-17): every one is on its own day, faded; a task never loses one
         obs = {}
