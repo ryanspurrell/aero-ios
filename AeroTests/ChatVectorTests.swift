@@ -305,6 +305,61 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertNil(ChatReplaced.pending(person: "p2", in: store))
     }
 
+    /// A store whose saves fail for the device (the Keychain refusing), as the second save in a replacement.
+    private final class SaveFails: ChatKeyStore {
+        var data: [String: Data] = [:]
+        func load(person: String) throws -> Data? { data[person] }
+        func save(_ data: Data, person: String) throws { throw ChatKeyError.notSaved(-25308) }
+        func forget(person: String) throws { data[person] = nil }
+    }
+
+    func testAFailedSaveOfTheNewKeysLeavesTheOldDeviceKeptAndNothingToRemove() throws {
+        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
+        let store = SaveFails()
+        store.data["p1"] = legacyRecord(e, s)
+        let old = try ChatDeviceKeeper.device(for: "p1", in: store)
+        XCTAssertThrowsError(try ChatDeviceKeeper.replace(old, with: Self.softFresh("p1"), in: store))
+        // the old device is still the one kept, and no entry is noted for removal: nothing can ask Aero to take the device in use out
+        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, "AAECAwQFBgcICQoL")
+        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
+    }
+
+    @MainActor
+    func testTwoCallsAtOnceDoTheWorkOnceAndShareItsResult() async throws {
+        let flight = ChatSingleFlight<Int>()
+        var runs = 0
+        let work: @MainActor () async throws -> Int = {
+            runs += 1
+            try await Task.sleep(nanoseconds: 50_000_000)
+            return runs
+        }
+        async let a = flight.run(work)
+        async let b = flight.run(work)
+        let (x, y) = try await (a, b)
+        XCTAssertEqual(runs, 1)
+        XCTAssertEqual(x, y)
+        // once it has finished, the next call is a new piece of work
+        let again = try await flight.run(work)
+        XCTAssertEqual(runs, 2)
+        XCTAssertEqual(again, 2)
+    }
+
+    @MainActor
+    func testAFailureIsSharedToo_AndTheNextCallTriesAgain() async throws {
+        let flight = ChatSingleFlight<Int>()
+        var runs = 0
+        struct Boom: Error {}
+        let failing: @MainActor () async throws -> Int = { runs += 1; try await Task.sleep(nanoseconds: 20_000_000); throw Boom() }
+        async let a: Int = flight.run(failing)
+        async let b: Int = flight.run(failing)
+        var failed = 0
+        do { _ = try await a } catch { failed += 1 }
+        do { _ = try await b } catch { failed += 1 }
+        XCTAssertEqual((runs, failed), (1, 2))
+        let ok = try await flight.run { 7 }
+        XCTAssertEqual(ok, 7)
+    }
+
     static func softFresh(_ person: String) -> ChatDevice {
         ChatDevice.software(person: person, id: "ZZZZZZZZZZZZ", ecdh: P256.KeyAgreement.PrivateKey(), sign: P256.Signing.PrivateKey())
     }

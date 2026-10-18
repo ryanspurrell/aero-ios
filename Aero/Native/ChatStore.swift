@@ -100,6 +100,31 @@ final class ChatSafetyLedger {
     }
 }
 
+/// One piece of work at a time, shared: a call made while it runs waits for the same result instead of starting the work again.
+@MainActor
+final class ChatSingleFlight<Value> {
+    private var running: Task<Value, Error>?
+    private var serial = 0
+
+    func run(_ work: @escaping @MainActor () async throws -> Value) async throws -> Value {
+        if let running { return try await running.value }
+        serial += 1
+        let mine = serial
+        let task = Task { () -> Value in
+            defer { if self.serial == mine { self.running = nil } }
+            return try await work()
+        }
+        running = task
+        return try await task.value
+    }
+
+    /// What is running is no longer the one to join (an account changed): the next call starts its own.
+    func forget() {
+        running = nil
+        serial += 1
+    }
+}
+
 // MARK: the session: who this is, this phone as a device, the keys opened
 
 @MainActor
@@ -121,6 +146,9 @@ final class ChatSession {
     private(set) var renewedKeys = false
     private var flight: Task<(ChatRoomsAnswer, Int), Error>?
     private var flightSerial = 0
+    /// The one `ensureDevice` that is running; a second call joins it (two screens asking on a first launch must not each make and
+    /// register a device).
+    private let deviceFlight = ChatSingleFlight<ChatDevice>()
 
     init(api: ChatAPI = ChatAPI(), keyStore: ChatKeyStore = KeychainChatKeyStore(), safety: ChatSafetyLedger = ChatSafetyLedger()) {
         self.api = api
@@ -133,6 +161,7 @@ final class ChatSession {
         generation += 1
         flightSerial += 1
         flight = nil
+        deviceFlight.forget()
         device = nil
         registered = false
         keys = [:]
@@ -171,6 +200,10 @@ final class ChatSession {
     /// This phone as a device of this person: made on first use, kept in the Keychain (Secure Enclave keys where there is one), and told to
     /// Aero once per launch (registering the same keys again changes nothing; Aero then has the PC share the keys of the chats it holds).
     func ensureDevice() async throws -> ChatDevice {
+        try await deviceFlight.run { try await self.ensureDeviceOnce() }
+    }
+
+    private func ensureDeviceOnce() async throws -> ChatDevice {
         if person.isEmpty { _ = try await loadRooms() }
         let g = generation
         let firstThisLaunch = device == nil
@@ -209,6 +242,8 @@ final class ChatSession {
     private func takeOutReplaced() async {
         guard let old = ChatReplaced.pending(person: person, in: keyStore) else { return }
         let who = person
+        // never the device now in use (it would be, were the keys not saved after all)
+        guard old != device?.id else { ChatReplaced.clear(person: who, in: keyStore); return }
         do {
             try await api.removeDevice(old)
             ChatReplaced.clear(person: who, in: keyStore)

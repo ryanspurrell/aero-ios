@@ -438,11 +438,12 @@ enum ChatDeviceKeeper {
         return made
     }
 
-    /// Put `fresh` in the place of `old`: the old id is kept first (so a restart still knows which entry in Aero's list is to be taken
-    /// out), then the new device is kept. Called only after `fresh` is registered with Aero and `old` has been found to be the only holder
-    /// of nothing.
+    /// Put `fresh` in the place of `old`: the new device is kept first, and only then is the old id noted as the entry in Aero's list to
+    /// take out. In that order a failed save leaves the old device kept and nothing noted, so nothing can ask Aero to remove the device
+    /// still in use; a failure to note it afterwards only leaves a harmless old entry in the list. Called only after `fresh` is
+    /// registered with Aero and `old` has been found to be the only holder of nothing.
     static func replace(_ old: ChatDevice, with fresh: ChatDevice, in store: ChatKeyStore) throws {
-        try ChatReplaced.remember(old.id, person: old.person, in: store)
         try store.save(try fresh.kept(), person: old.person)
+        try? ChatReplaced.remember(old.id, person: old.person, in: store)
     }
 }
