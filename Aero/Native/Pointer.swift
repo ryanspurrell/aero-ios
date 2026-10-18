@@ -99,10 +99,11 @@ extension Pointer {
         if Pointer.isQuiet(item.state) { return item.markText }
         var base: String?
         if item.state == "done" { base = "Done" + (item.doneAtText.map { " at " + $0 } ?? "") }
-        else if item.state == "overdue" { base = "From before" }
+        // no record of completion is none, not late (Aryn, 2026-10-17); the words are picked, not grounded
+        else if item.state == "unmarked" { base = "From before, not marked done" }
         else if let until = item.until { base = until }
         else if let end = item.endText, !end.isEmpty { base = "Until " + end }
-        else if item.late == true { base = "Not done" }
+        else if item.unmarked == true { base = "Not marked done" }
         else if item.isRepeat == true { base = "Repeats" }
         // "Moved from Thursday", or "Was due Thursday" on the day it was done, beside the rest
         let said = [base, item.markText].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ")

@@ -66,7 +66,7 @@ struct DayItem: Codable, Hashable, Identifiable {
     var timeText: String?
     var endText: String?
     var allDay: Bool?
-    var state: String?                // open, done, overdue; "moved" and "was_due" are quiet rows that only say where a thing went or was due
+    var state: String?                // open, done, unmarked; "moved" and "was_due" are quiet rows that only say where a thing went or was due
     var markText: String?             // "Moved from Thursday", "Moved to Friday 4:00 PM", "Done later, on Saturday", "Was due Thursday"
     var movedTo: MovedTo?
     var doneAtText: String?
@@ -76,7 +76,8 @@ struct DayItem: Codable, Hashable, Identifiable {
     var isRepeat: Bool?
     var open: OpenRef?
     var question: Question?
-    var late: Bool?
+    /// No record of completion is none, not "late" (Aryn, 2026-10-17): a task's own entry whose day or time passed with nothing recorded.
+    var unmarked: Bool?
     var until: String?
     var untilWords: String?
     var text: String?                 // a "free" row's words
@@ -84,7 +85,7 @@ struct DayItem: Codable, Hashable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case kind, id, source, type, title, time, timeText, endText, allDay, state, doneAtText, since, color, icon, markText, movedTo
         case isRepeat = "repeat"
-        case open, question, late, until, untilWords, text
+        case open, question, unmarked, until, untilWords, text
     }
 
     init(from decoder: Decoder) throws {
@@ -109,7 +110,7 @@ struct DayItem: Codable, Hashable, Identifiable {
         isRepeat = try c.decodeIfPresent(Bool.self, forKey: .isRepeat)
         open = try c.decodeIfPresent(OpenRef.self, forKey: .open)
         question = try c.decodeIfPresent(Question.self, forKey: .question)
-        late = try c.decodeIfPresent(Bool.self, forKey: .late)
+        unmarked = try c.decodeIfPresent(Bool.self, forKey: .unmarked)
         until = try c.decodeIfPresent(String.self, forKey: .until)
         untilWords = try c.decodeIfPresent(String.self, forKey: .untilWords)
         text = try c.decodeIfPresent(String.self, forKey: .text)
@@ -149,7 +150,7 @@ struct SimpleDay: Codable, Hashable {
     var next: SimpleNext?
     /// Everything that is next, together, when several are at the same time (the viewer's own order or reading direction orders them).
     var nexts: [SimpleNext]?
-    var behind: [SimpleLine]
+    var unmarked: [SimpleLine]
     var later: [SimpleLine]
     var did: [SimpleLine]
     var none: String

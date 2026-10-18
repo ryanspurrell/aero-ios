@@ -19,7 +19,7 @@ final class DayRequirementsTests: XCTestCase {
         try decode("""
         {"date":"2026-10-16","label":"Tomorrow","date_text":"Friday 16 October","is_today":false,"prev":"2026-10-15","next":"2026-10-17",
          "rows":[\(rows.joined(separator: ","))],"anytime":[],
-         "simple":{"greeting":"Hello","clock":"","next":null,"behind":[],"later":[],"did":[],"none":""\(simple)}}
+         "simple":{"greeting":"Hello","clock":"","next":null,"unmarked":[],"later":[],"did":[],"none":""\(simple)}}
         """)
     }
 
@@ -104,8 +104,18 @@ final class DayRequirementsTests: XCTestCase {
         let quiet = try decode("""
         {"date":"2026-10-16","label":"Today","date_text":"Friday 16 October","is_today":true,"prev":"","next":"",
          "rows":[],"anytime":[\(item("\"id\":\"q\",\"title\":\"Moved\",\"state\":\"moved\",\"time_text\":\"\"" ))],
-         "simple":{"greeting":"","clock":"","next":null,"behind":[],"later":[],"did":[],"none":""}}
+         "simple":{"greeting":"","clock":"","next":null,"unmarked":[],"later":[],"did":[],"none":""}}
         """)
         XCTAssertFalse(quiet.anytime.contains(where: { !Pointer.isQuiet($0.state) }))
+    }
+
+    /// Not run when written. No record of completion is none, not late: the words say "not marked done", nothing says late or not done.
+    func testNoRecordReadsAsNotMarkedDoneNeverLate() throws {
+        let d = try day(rows: [item("\"id\":\"u1\",\"title\":\"Call the bank\",\"state\":\"open\",\"unmarked\":true"),
+                               item("\"id\":\"u2\",\"title\":\"Old thing\",\"state\":\"unmarked\",\"since\":\"2026-10-12\",\"unmarked\":true")])
+        XCTAssertEqual(Pointer(d.rows[0]).meta, "Not marked done")
+        XCTAssertEqual(Pointer(d.rows[1]).meta, "From before, not marked done")
+        XCTAssertFalse((Pointer(d.rows[0]).meta ?? "").lowercased().contains("late"))
+        XCTAssertFalse((Pointer(d.rows[0]).meta ?? "").contains("Not done"))
     }
 }

@@ -253,7 +253,7 @@ struct SimpleDayView: View {
             Text(s.clock).fx(Look.Size.nextMeta, style: .title3).foregroundStyle(Look.Palette.soft)
             if let waiting = (day.rows + day.anytime).first(where: { $0.question != nil }) { PointerView(pointer: Pointer(waiting), size: .question, actions: .day(store, open: open)) }
             if let n = s.next { nextCard(n) } else { Text(s.none.isEmpty ? "Your day is clear." : s.none).fx(Look.Size.nextMeta, style: .title3) }
-            if !s.behind.isEmpty { listCard("Not done yet", s.behind) }
+            if !s.unmarked.isEmpty { listCard("Not marked done", s.unmarked) }
             if !s.later.isEmpty { listCard("Later", s.later) }
             ForEach(s.did) { line in Label(line.text ?? "", systemImage: "checkmark").fx(Look.Size.nextMeta).foregroundStyle(Look.Palette.fg) }
             if !store.helpers.isEmpty { helpButton }
