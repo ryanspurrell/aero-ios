@@ -31,7 +31,7 @@ struct DayRows: View {
                     case "now": NowRow(metrics: metrics, timeText: row.timeText ?? "")
                     case "free": FreeRow(metrics: metrics, text: row.text ?? "")
                     default:
-                        let isNext = row.id == nextID
+                        let isNext = row.id == nextID && row.state == "open"      // not the same task's done row (a repeat has both)
                         VStack(alignment: .leading, spacing: Look.Space.tight) {
                             SpineRow(metrics: metrics, timeText: row.timeText ?? "", knot: Fingus.hue(row.color).base, centered: !isNext) {
                                 PointerView(pointer: Pointer(row), size: isNext ? .next : .block, actions: actions)
