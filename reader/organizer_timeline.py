@@ -214,27 +214,48 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         if rec.get("repeat") and rec.get("start"):
             try:
                 rule = rrulestr(rec["repeat"], dtstart=local(rec["start"]))
-                times = rule.between(start, stop, inc=True)[:ITEMS_MAX]
+                times = rule.between(start, stop, inc=True)
             except (ValueError, TypeError):
                 rule, times = None, []
             done_until = local(rec.get("done_until")) if rec.get("done_until") else None
             rep_timed = rec.get("start_timed") is True          # an hour given as 00:00 is a time, not a date alone
+            # the times that count (a past time nobody ticked is not claimed either way; the times a put-off holds back wait), then the cap
+            times = [o for o in times if (done_until and o <= done_until) or not (o.date() < today or (held and o < held))][:ITEMS_MAX]
+            ticked_days = {o.date() for o in times if done_until and o <= done_until}
+            for x in rec.get("done_ats") or []:
+                da = local(x)                                    # a completion on a day that has no ticked time of its own
+                if da and first <= da.date() <= last and da.date() not in ticked_days:
+                    put(_entry("organizer", kind, key, title, da.date(), _hm(da), state="done", done_at=_hm(da), repeat=True, **look))
             for o in times:
                 ticked = bool(done_until and o <= done_until)
-                if (o.date() < today or (held and o < held)) and not ticked:
-                    continue                                     # a past time nobody ticked: not claimed either way
                 put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (rep_timed or o.hour or o.minute) else "", state="done" if ticked else "open",
                            done_at=_hm(done_until) if ticked and done_until and done_until.date() == o.date() and (done_until.hour or done_until.minute) else "",
                            repeat=True, question=q, **look))
-            if held and rule is not None and first <= held.date() <= last \
-                    and not (held.date() >= today and rule.between(held, held, inc=True)):
-                # put off to a time (the schedule may not have it): it is there at that time, and stays when the day passes, as behind, like a
-                # task that is not repeating (the times before it wait, the next one is as scheduled; completing it clears the deferral)
-                put(_entry("organizer", kind, key, title, held.date(), _hm(held) if d.get("timed", True) else "", repeat=True, question=q,
-                           mark="moved_from", mark_text="Moved", **look))
-            if held and rule is not None and held.date() < today and first <= today <= last:
-                put(_entry("organizer", kind, key, title, today, state="overdue", since=held.date().isoformat(), repeat=True, question=q,
-                           mark="moved_from", mark_text="Moved", **look))
+            if held and rule is not None:
+                # put off: the occurrence that was current goes to the new time. The new day has it as normal ("Moved from <old day>"), and
+                # stays when the day passes, as behind, like a task that is not repeating; the old day says where it went, quietly. The
+                # times before the new one wait; the next one is as scheduled; completing it clears the deferral
+                w = when(rec)
+                new_timed = d["timed"] if "timed" in d else True
+                old_timed = bool(w) and (rep_timed or bool(w.hour or w.minute))
+                if w is None:
+                    moved_from = "Moved"
+                elif w.date() != held.date():
+                    moved_from = "Moved from " + day_words(w.date(), today)
+                else:
+                    moved_from = "Moved from " + clock_text(_hm(w)) if old_timed else "Moved"
+                if first <= held.date() <= last and not (held.date() >= today and rule.between(held, held, inc=True)):
+                    put(_entry("organizer", kind, key, title, held.date(), _hm(held) if new_timed else "", repeat=True, question=q,
+                               mark="moved_from", mark_text=moved_from, **look))
+                if held.date() < today and first <= today <= last:
+                    put(_entry("organizer", kind, key, title, today, state="overdue", since=held.date().isoformat(), repeat=True, question=q,
+                               mark="moved_from", mark_text=moved_from, **look))
+                if w is not None and w.date() != held.date() and first <= w.date() <= last:
+                    where = day_words(held.date(), today) + (" " + clock_text(_hm(held)) if new_timed else "")
+                    said = ("%s %s; moved to %s" % ("Was due" if w.date() < today else "Due", day_words(w.date(), today), where)) \
+                        if held.date() < today else "Moved to " + where
+                    put(_entry("organizer", kind, key, title, w.date(), _hm(w) if old_timed else "", state="moved", mark="moved_to", mark_text=said,
+                               repeat=True, moved_to={"date": held.date().isoformat(), "time": _hm(held) if new_timed else "", "text": where}, **look))
             continue
         # done is a dated observation that accumulates (Aryn, 2026-10-17): every one is on its own day, faded; a task never loses one
         obs = {}
