@@ -292,17 +292,24 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
     }
 
-    func testReplacingKeepsTheOldIdAndThenTheNewDevice() throws {
+    func testReplacingKeepsTheNewDeviceAndNotesNothingToRemove() throws {
         let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
         let store = MemoryChatKeyStore()
         try store.save(legacyRecord(e, s), person: "p1")
         let old = try ChatDeviceKeeper.device(for: "p1", in: store)
         let fresh = Self.softFresh("p1")
         try ChatDeviceKeeper.replace(old, with: fresh, in: store)
-        // the new device is the one kept from now on, and the old id waits to be taken out
+        // the new device is the one kept from now on; the old keys are gone only here, after Aero has taken the old entry out
         XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, fresh.id)
-        XCTAssertEqual(ChatReplaced.pending(person: "p1", in: store), "AAECAwQFBgcICQoL")
-        XCTAssertNil(ChatReplaced.pending(person: "p2", in: store))
+        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
+    }
+
+    func testAnUnfinishedRenewalsNewEntryIsKeptNotedUntilItIsTakenOut() throws {
+        let store = MemoryChatKeyStore()
+        let fresh = Self.softFresh("p1")
+        try ChatReplaced.remember(fresh.id, person: "p1", in: store)
+        XCTAssertEqual(ChatReplaced.pending(person: "p1", in: store), "ZZZZZZZZZZZZ")
+        XCTAssertNil(try store.load(person: "p1"))      // never read as the person's device
     }
 
     /// A store whose saves fail for the device (the Keychain refusing), as the second save in a replacement.
@@ -313,15 +320,14 @@ final class ChatVectorTests: XCTestCase {
         func forget(person: String) throws { data[person] = nil }
     }
 
-    func testAFailedSaveOfTheNewKeysLeavesTheOldDeviceKeptAndNothingToRemove() throws {
+    func testAFailedSaveOfTheNewKeysLeavesTheOldDeviceKept() throws {
         let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
         let store = SaveFails()
         store.data["p1"] = legacyRecord(e, s)
         let old = try ChatDeviceKeeper.device(for: "p1", in: store)
         XCTAssertThrowsError(try ChatDeviceKeeper.replace(old, with: Self.softFresh("p1"), in: store))
-        // the old device is still the one kept, and no entry is noted for removal: nothing can ask Aero to take the device in use out
+        // the old device is still the one kept, with its keys: they are discarded only by a save that worked
         XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, "AAECAwQFBgcICQoL")
-        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
     }
 
     @MainActor

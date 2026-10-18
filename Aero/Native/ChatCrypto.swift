@@ -404,8 +404,8 @@ final class MemoryChatKeyStore: ChatKeyStore {
     func forget(person: String) throws { kept[person] = nil }
 }
 
-/// The id of the device a renewal put away, kept where the keys are kept until Aero has taken it out of the person's list, so that
-/// a restart in between still knows which entry to take out (kept under its own name beside the person's device, never read as one).
+/// The id of a device registered with Aero for a renewal that was not finished (the new one, whose keys were not kept), noted where the keys are
+/// kept until Aero has taken it out of the person's list, so that a restart in between still knows which entry to take out (kept under its own name beside the person's device, never read as one).
 enum ChatReplaced {
     static func name(_ person: String) -> String { person + "#replaced" }
 
@@ -438,12 +438,10 @@ enum ChatDeviceKeeper {
         return made
     }
 
-    /// Put `fresh` in the place of `old`: the new device is kept first, and only then is the old id noted as the entry in Aero's list to
-    /// take out. In that order a failed save leaves the old device kept and nothing noted, so nothing can ask Aero to remove the device
-    /// still in use; a failure to note it afterwards only leaves a harmless old entry in the list. Called only after `fresh` is
-    /// registered with Aero and `old` has been found to be the only holder of nothing.
+    /// Keep `fresh` in the place of `old`, which is the one step that discards the old keys. Called only after Aero has taken the old
+    /// device out of the person's list (its own check, made in one step with the removal, found that nothing was held by it alone), and
+    /// never before: until then the old keys are the only way to open what it holds. A failed save throws and leaves the old keys kept.
     static func replace(_ old: ChatDevice, with fresh: ChatDevice, in store: ChatKeyStore) throws {
         try store.save(try fresh.kept(), person: old.person)
-        try? ChatReplaced.remember(old.id, person: old.person, in: store)
     }
 }
