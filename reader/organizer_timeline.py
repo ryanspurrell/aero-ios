@@ -138,7 +138,8 @@ def _one_row_each(day):
     rank = lambda e: 2 if e["state"] not in ("done",) + QUIET else 1 if e["state"] == "done" else 0
     keep, out = {}, []
     for e in day:
-        k = (e["source"], e["id"]) if e["source"] == "organizer" else None
+        # a repeating task may have several times on a day (its own times, and a put-off one): they are rows of different times
+        k = (e["source"], e["id"], e["time"] if e["repeat"] else None) if e["source"] == "organizer" else None
         if k is None or k not in keep:
             if k:
                 keep[k] = e
@@ -146,10 +147,20 @@ def _one_row_each(day):
             continue
         old = keep[k]
         win, lose = (e, old) if rank(e) > rank(old) else (old, e)
+        was = "Done earlier, then reopened"
+        if win["state"] in QUIET and lose["state"] in QUIET:
+            # two quiet rows of one task on a day (it was due here and was also done elsewhere, or moved): one row says both; a "moved" row
+            # is kept as the base so tapping it still opens the new place
+            base = win if win["state"] == "moved" or lose["state"] != "moved" else lose
+            base["mark_text"] = " \u00b7 ".join(dict.fromkeys(x for x in (win["mark_text"], lose["mark_text"]) if x))
+            win = base
         if lose["state"] == "moved" and win["state"] not in ("done",) + QUIET:
-            win["mark_text"] = lose["mark_text"]               # behind from the new day and due here: one row says both
-        if lose["state"] == "done" and win["state"] not in ("done",) + QUIET:
-            win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], "Done earlier, then reopened") if x)
+            # behind from the new day and due here: one row says both (and keeps that it was done earlier, if it was)
+            win["mark_text"] = " \u00b7 ".join(x for x in (lose["mark_text"], was if was in win["mark_text"] else "") if x)
+        if lose["state"] == "moved" and win["state"] == "done":
+            win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], lose["mark_text"]) if x)      # done here, and put off to another day
+        if lose["state"] == "done" and win["state"] not in ("done",) + QUIET and was not in win["mark_text"]:
+            win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], was) if x)
         if win is e:
             out[out.index(old)] = e
             keep[k] = e
@@ -215,9 +226,14 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                 put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (rep_timed or o.hour or o.minute) else "", state="done" if ticked else "open",
                            done_at=_hm(done_until) if ticked and done_until and done_until.date() == o.date() and (done_until.hour or done_until.minute) else "",
                            repeat=True, question=q, **look))
-            if held and rule is not None and held.date() >= today and first <= held.date() <= last and not rule.between(held, held, inc=True):
-                # put off to a time the schedule does not have: it is there at that time (the times before it wait, the next one is as scheduled)
+            if held and rule is not None and first <= held.date() <= last \
+                    and not (held.date() >= today and rule.between(held, held, inc=True)):
+                # put off to a time (the schedule may not have it): it is there at that time, and stays when the day passes, as behind, like a
+                # task that is not repeating (the times before it wait, the next one is as scheduled; completing it clears the deferral)
                 put(_entry("organizer", kind, key, title, held.date(), _hm(held) if d.get("timed", True) else "", repeat=True, question=q,
+                           mark="moved_from", mark_text="Moved", **look))
+            if held and rule is not None and held.date() < today and first <= today <= last:
+                put(_entry("organizer", kind, key, title, today, state="overdue", since=held.date().isoformat(), repeat=True, question=q,
                            mark="moved_from", mark_text="Moved", **look))
             continue
         # done is a dated observation that accumulates (Aryn, 2026-10-17): every one is on its own day, faded; a task never loses one

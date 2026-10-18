@@ -108,6 +108,7 @@ final class PhoneOrganizer: OrganizerBackend {
                 let occ = try await reader.call("occurrence", ["rec": .object(rec)])
                 guard let at = occ.objectValue?["at"]?.stringValue else { throw Failure.noSuchItem }
                 rec["done_until"] = .string(at)
+                rec["deferred"] = nil           // the occurrence that was put off is the one just done; the versions keep the deferral
                 if case .number(let n)? = rec["done_count"] { rec["done_count"] = .number(n + 1) } else { rec["done_count"] = .number(1) }
                 why = "done for \(at)"
             } else {
