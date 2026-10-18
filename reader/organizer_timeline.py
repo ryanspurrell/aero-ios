@@ -161,6 +161,9 @@ def _one_row_each(day):
             win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], lose["mark_text"]) if x)      # done here, and put off to another day
         if lose["state"] == "done" and win["state"] not in ("done",) + QUIET and was not in win["mark_text"]:
             win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], was) if x)
+        if win["state"] == lose["state"] and lose["mark_text"] and lose["mark_text"] not in win["mark_text"]:
+            # two instances of a repeat at one time (a put-off one and the day's own): one row, with the words of both
+            win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], lose["mark_text"]) if x)
         if win is e:
             out[out.index(old)] = e
             keep[k] = e
@@ -206,7 +209,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         look = {"color": proj.get("color") if proj.get("color") else None, "icon": proj.get("icon") if proj.get("icon") else None}
         d = rec.get("deferred") or {}
         until = local(d["until"]) if d.get("until") else None
-        held = until if rec.get("repeat") else None      # a repeating task put off: its open times before the new time wait
+        held = until if rec.get("repeat") else None      # a repeating task put off: its current occurrence is moved to the new time
         ahead = bool(until) and rec.get("status") == "open" and not rec.get("repeat")
         kind = "buy" if rec.get("type") == "buy" else "repeat" if rec.get("repeat") else "task"
         q = question_of(oid, rec)
@@ -220,7 +223,8 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             done_until = local(rec.get("done_until")) if rec.get("done_until") else None
             rep_timed = rec.get("start_timed") is True          # an hour given as 00:00 is a time, not a date alone
             # the times that count (a past time nobody ticked is not claimed either way; the times a put-off holds back wait), then the cap
-            times = [o for o in times if (done_until and o <= done_until) or not (o.date() < today or (held and o < held))][:ITEMS_MAX]
+            moved_occ = when(rec) if held else None             # the one occurrence that was put off (the rest are their own instances)
+            times = [o for o in times if (done_until and o <= done_until) or not (o.date() < today or (moved_occ is not None and o == moved_occ))][:ITEMS_MAX]
             ticked_days = {o.date() for o in times if done_until and o <= done_until}
             for x in rec.get("done_ats") or []:
                 da = local(x)                                    # a completion on a day that has no ticked time of its own
@@ -244,7 +248,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                     moved_from = "Moved from " + day_words(w.date(), today)
                 else:
                     moved_from = "Moved from " + clock_text(_hm(w)) if old_timed else "Moved"
-                if first <= held.date() <= last and not (held.date() >= today and rule.between(held, held, inc=True)):
+                if first <= held.date() <= last:
                     put(_entry("organizer", kind, key, title, held.date(), _hm(held) if new_timed else "", repeat=True, question=q,
                                mark="moved_from", mark_text=moved_from, **look))
                 if held.date() < today and first <= today <= last:
