@@ -22,7 +22,7 @@ enum ChatOpener {
             if locked, let person = Set(devices.keys).union(past.keys).sorted().first(where: { name in
                 !name.hasPrefix("@") && ((devices[name] ?? []) + (past[name] ?? [])).contains { $0.device == m.device && ($0.isPrivate ?? false) }
             }) { return person }
-            if (devices["@fingoid"] ?? []).contains(where: { $0.device == m.device }) { return "@fingoid" }
+            if ((devices["@fingoid"] ?? []) + (past["@fingoid"] ?? [])).contains(where: { $0.device == m.device }) { return "@fingoid" }
             return "@pc"
         case "addon":
             return holders[m.sender] ?? m.sender
