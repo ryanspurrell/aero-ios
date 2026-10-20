@@ -35,6 +35,9 @@ enum ChatWords {
         "This phone can't be added: you have \(count > 0 ? "\(count) devices" : "too many devices"). Remove one in Devices."
     }
 
+    /// This phone's device was removed from the person's list; it makes new keys the next time.
+    static let deviceRemoved = "This phone was removed from your devices, so it needs new keys. Try again."
+
     static func rowNote(_ unread: String?, locked: Bool) -> String? {
         [locked ? "Locked" : nil, unread].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
     }
@@ -90,6 +93,9 @@ enum ChatStopWords {
             case .devicesFull(let count):
                 return ChatStopped(doing: doing, step: ChatStep.devices, next: "Remove one in Devices, then try again.", key: "Try again", action: .retry,
                                    words: ChatWords.devicesFull(count))
+            case .deviceRemoved:
+                return ChatStopped(doing: doing, step: ChatStep.devices, next: "This phone was removed from your devices, so it needs new keys. Try again.", key: "Try again", action: .retry,
+                                   words: ChatWords.deviceRemoved)
             case .server:
                 return ChatStopped(doing: doing, step: ChatStep.answer, next: "Try again.", key: "Try again", action: .retry)
             case .unreadable:

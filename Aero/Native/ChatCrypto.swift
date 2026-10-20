@@ -404,18 +404,19 @@ final class MemoryChatKeyStore: ChatKeyStore {
     func forget(person: String) throws { kept[person] = nil }
 }
 
-/// The id of a device registered with Aero for a renewal that was not finished (the new one, whose keys were not kept), noted where the keys are
-/// kept until Aero has taken it out of the person's list, so that a restart in between still knows which entry to take out (kept under its own name beside the person's device, never read as one).
-enum ChatReplaced {
-    static func name(_ person: String) -> String { person + "#replaced" }
+/// The device made to take the place of an earlier build's (raw keys), kept apart under its own name beside the person's device until Aero says
+/// it can open everything the old one can and takes the old one out; never read as the person's device, and never used before then. It is
+/// kept (its private keys too) from the moment it is registered, because the chats it is to be given can only be opened with them.
+enum ChatNextDevice {
+    static func name(_ person: String) -> String { person + "#next" }
 
-    static func remember(_ id: String, person: String, in store: ChatKeyStore) throws {
-        try store.save(Data(id.utf8), person: name(person))
+    static func load(person: String, in store: ChatKeyStore) -> ChatDevice? {
+        guard let data = try? store.load(person: name(person)), case .device(let d)? = try? ChatDevice.restore(person: person, from: data) else { return nil }
+        return d
     }
 
-    static func pending(person: String, in store: ChatKeyStore) -> String? {
-        guard let data = try? store.load(person: name(person)), let id = String(data: data, encoding: .utf8), !id.isEmpty else { return nil }
-        return id
+    static func keep(_ device: ChatDevice, in store: ChatKeyStore) throws {
+        try store.save(try device.kept(), person: name(device.person))
     }
 
     static func clear(person: String, in store: ChatKeyStore) {
@@ -439,9 +440,20 @@ enum ChatDeviceKeeper {
     }
 
     /// Keep `fresh` in the place of `old`, which is the one step that discards the old keys. Called only after Aero has taken the old
-    /// device out of the person's list (its own check, made in one step with the removal, found that nothing was held by it alone), and
-    /// never before: until then the old keys are the only way to open what it holds. A failed save throws and leaves the old keys kept.
+    /// device out of the person's list, which it does (in one step with its check) only when `fresh` already holds a seal of every key the
+    /// old one does; never before: until then the old keys are the only way to open what it holds. A failed save throws and leaves the old
+    /// keys kept. The noted next device is cleared once `fresh` is the one kept.
     static func replace(_ old: ChatDevice, with fresh: ChatDevice, in store: ChatKeyStore) throws {
         try store.save(try fresh.kept(), person: old.person)
+        ChatNextDevice.clear(person: old.person, in: store)
+    }
+
+    /// Aero says this phone's device was removed from the person's list and it still has its keys: it is not taken back as it was. It starts
+    /// again with the device noted for the move to the Secure Enclave if there is one, else a new one, kept in the place of the old.
+    static func startAgain(for person: String, in store: ChatKeyStore) throws -> ChatDevice {
+        let next = try ChatNextDevice.load(person: person, in: store) ?? ChatDevice.make(person: person)
+        try store.save(try next.kept(), person: person)
+        ChatNextDevice.clear(person: person, in: store)
+        return next
     }
 }

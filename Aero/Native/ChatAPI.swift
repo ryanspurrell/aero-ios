@@ -11,9 +11,8 @@ import WebKit
 ///   GET  rooms/<id>/busy                  whether a reply is being written now
 ///   GET  rooms/people.json                the models a new chat may use
 ///   GET  devices.json?people=a,b          public keys of devices, to seal a new chat's key to
-///   POST devices                          this phone as a device {device, ecdh, sign, label}; refused with {"error", "devices_full": n} at the most
-///   GET  devices/holds.json?device=       what only that one of this person's own devices can open {holds: {rooms, epochs}}
-///   POST devices/remove                   one of this person's own devices {device}, taken out of their list (refused with 409 if it is the only holder of a chat's key)
+///   POST devices                          this phone as a device {device, ecdh, sign, label}; refused with {"error", "devices_full": n} at the most, or {"device_removed": true} for a device she removed
+///   POST devices/remove                   one of this person's own devices {device, replaced_by?}, taken out of their list (refused with 409 if it is the only holder of a chat's key, or the replacement cannot open everything it can yet)
 ///   POST rooms/new                        a new chat {device, room, name, members, seals, private}
 ///   POST rooms/<id>/send                  a sealed message {device, epoch, mentions, iv, ct, sig}
 ///   POST rooms/<id>/read                  read up to {seq}
@@ -25,6 +24,8 @@ final class ChatAPI {
         /// Aero refused this phone as a chat device because the person already has the most (Messages keeps eight): how many they have
         /// (0 when it was not said). Their own list is in Aero's Devices page, where one can be removed.
         case devicesFull(Int)
+        /// Aero says this device was removed from the person's list and must make new keys to be added again.
+        case deviceRemoved
         case server(String)
         case unreadable
     }
@@ -91,12 +92,13 @@ final class ChatAPI {
     /// What the server said when it refused: the Locked answer, a sign-in problem, or its own words.
     static func failure(status: Int, data: Data) -> Failure? {
         struct Said: Decodable {
-            var error: String?; var locked: Bool?; var devicesFull: Int?
-            enum CodingKeys: String, CodingKey { case error, locked; case devicesFull = "devices_full" }
+            var error: String?; var locked: Bool?; var devicesFull: Int?; var deviceRemoved: Bool?
+            enum CodingKeys: String, CodingKey { case error, locked; case devicesFull = "devices_full"; case deviceRemoved = "device_removed" }
         }
         let said = try? JSONDecoder().decode(Said.self, from: data)
         if said?.locked == true { return .locked }
         if status >= 400, let full = said?.devicesFull { return .devicesFull(full) }
+        if status >= 400, said?.deviceRemoved == true { return .deviceRemoved }
         if status == 401 || status == 403 { return .notSignedIn }
         if status >= 400 { return .server(said?.error ?? "That didn't work. Try again.") }
         return nil
@@ -172,24 +174,19 @@ final class ChatAPI {
 
     struct RemoveBody: Encodable {
         var device: String
-        /// What Aero gave when it warned that this device holds the only copy of a chat's key (bound to this device). This app never sends
-        /// one: it removes only a device it has found holds nothing alone.
-        var ack: String? = nil
+        /// The person's device that takes this one's place: Aero removes this one only if that one already holds a seal of every key this one
+        /// does (checked in one step with the removal). This app never sends an acknowledgement of a loss: it removes only a device it is
+        /// replacing in that way.
+        var replacedBy: String? = nil
+        enum CodingKeys: String, CodingKey { case device; case replacedBy = "replaced_by" }
     }
 
     /// Take one of this person's own devices out of their list in Aero. Never another person's: Aero answers 404 for an id that is not
-    /// in the signed-in person's list, which is taken as done. A device that holds the only copy of a chat's key is refused (409).
-    func removeDevice(_ id: String) async throws {
-        do { _ = try await post("devices/remove", RemoveBody(device: id)) }
+    /// in the signed-in person's list, which is taken as done. Refused (409) if it holds the only copy of a chat's key, or, with
+    /// `replacedBy`, if that device cannot open everything it can yet.
+    func removeDevice(_ id: String, replacedBy: String? = nil) async throws {
+        do { _ = try await post("devices/remove", RemoveBody(device: id, replacedBy: replacedBy)) }
         catch let f as Failure where ChatAPI.alreadyGone(f) { return }
-    }
-
-    /// What only this device can open: rooms and chats whose key no other device and not the PC holds. Asked before moving to new keys.
-    struct Holds: Decodable, Equatable { var rooms: Int; var epochs: Int }
-
-    func holds(_ id: String) async throws -> Holds {
-        struct Answer: Decodable { var holds: Holds }
-        return try await get("devices/holds.json", ["device": id], as: Answer.self).holds
     }
 
     struct NewRoom: Encodable {

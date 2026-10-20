@@ -269,21 +269,27 @@ final class ChatTests: XCTestCase {
                        "Opening this chat stopped at Aero's answer. Try again.")
     }
 
-    func testRemovingADeviceSendsNoAcknowledgementOfItsOwn() throws {
+    func testRemovingADeviceNamesTheOneThatTakesItsPlaceAndNeverAnAcknowledgement() throws {
         func json(_ body: ChatAPI.RemoveBody) throws -> [String: Any] {
             try JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any] ?? [:]
         }
-        // the app removes only a device it found holds nothing alone, so it never says "remove it anyway"
-        let plain = try json(ChatAPI.RemoveBody(device: "abc12345"))
-        XCTAssertEqual(plain["device"] as? String, "abc12345")
-        XCTAssertNil(plain["ack"])
-        XCTAssertNil(plain["lose_history"])
+        let replacing = try json(ChatAPI.RemoveBody(device: "abc12345", replacedBy: "def67890"))
+        XCTAssertEqual(replacing["device"] as? String, "abc12345")
+        XCTAssertEqual(replacing["replaced_by"] as? String, "def67890")
+        XCTAssertNil(replacing["ack"])
+        XCTAssertNil(replacing["lose_history"])
+        XCTAssertNil(try json(ChatAPI.RemoveBody(device: "abc12345"))["replaced_by"])
     }
 
-    func testWhatADeviceHoldsAloneDecodes() throws {
-        struct Answer: Decodable { var holds: ChatAPI.Holds }
-        let got = try JSONDecoder().decode(Answer.self, from: Data(#"{"ok":true,"holds":{"rooms":2,"epochs":3}}"#.utf8))
-        XCTAssertEqual(got.holds, ChatAPI.Holds(rooms: 2, epochs: 3))
+    func testADeviceThePersonRemovedIsToldToMakeNewKeys() throws {
+        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"device_removed":true,"error":"This device was removed from your list, so it needs new keys."}"#.utf8)), .deviceRemoved)
+        let s = ChatStopWords.make(doing: ChatStopWords.opening, error: ChatAPI.Failure.deviceRemoved)
+        XCTAssertEqual(s.text, "This phone was removed from your devices, so it needs new keys. Try again.")
+        XCTAssertEqual(s.action, .retry)
+        // a refusal because the replacement cannot open everything yet is Aero's own words, and is not "gone"
+        let notYet = ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true,"error":"The new device can't open everything yet."}"#.utf8))
+        XCTAssertEqual(notYet, .server("The new device can't open everything yet."))
+        XCTAssertFalse(ChatAPI.alreadyGone(try XCTUnwrap(notYet)))
     }
 
     func testADeviceAeroDoesNotListIsAlreadyGone() {

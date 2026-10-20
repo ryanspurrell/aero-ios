@@ -276,40 +276,50 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertTrue(got.isSoftware)
         XCTAssertEqual(got.canMoveToEnclave, SecureEnclave.isAvailable)
         XCTAssertEqual(try store.load(person: "p1"), record)
-        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
     }
 
-    func testThePutAwayDevicesIdIsKeptUntilAeroHasTakenItOut() throws {
+    func testTheNextDeviceIsKeptApartAndNeverReadAsThePersonsOwn() throws {
         let store = MemoryChatKeyStore()
-        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
-        try ChatReplaced.remember("AAECAwQFBgcICQoL", person: "p1", in: store)
-        // a restart is another look at the same store: it is still known, for the person it was put away for only
-        XCTAssertEqual(ChatReplaced.pending(person: "p1", in: store), "AAECAwQFBgcICQoL")
-        XCTAssertNil(ChatReplaced.pending(person: "p2", in: store))
-        // it is not mistaken for the person's own device
+        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
+        let next = Self.softFresh("p1")
+        try ChatNextDevice.keep(next, in: store)
+        // a restart is another look at the same store: the same device, with the keys it needs to open what is sealed to it
+        let again = try XCTUnwrap(ChatNextDevice.load(person: "p1", in: store))
+        XCTAssertEqual(again.id, next.id)
+        XCTAssertEqual(again.ecdhPublic, next.ecdhPublic)
+        XCTAssertNil(ChatNextDevice.load(person: "p2", in: store))
         XCTAssertNil(try store.load(person: "p1"))
-        ChatReplaced.clear(person: "p1", in: store)
-        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
+        ChatNextDevice.clear(person: "p1", in: store)
+        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
     }
 
-    func testReplacingKeepsTheNewDeviceAndNotesNothingToRemove() throws {
+    func testReplacingKeepsTheNewDeviceAndClearsTheNextOne() throws {
         let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
         let store = MemoryChatKeyStore()
         try store.save(legacyRecord(e, s), person: "p1")
         let old = try ChatDeviceKeeper.device(for: "p1", in: store)
         let fresh = Self.softFresh("p1")
+        try ChatNextDevice.keep(fresh, in: store)
         try ChatDeviceKeeper.replace(old, with: fresh, in: store)
-        // the new device is the one kept from now on; the old keys are gone only here, after Aero has taken the old entry out
+        // the new device is the one kept from now on; the old keys are gone only here
         XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, fresh.id)
-        XCTAssertNil(ChatReplaced.pending(person: "p1", in: store))
+        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
     }
 
-    func testAnUnfinishedRenewalsNewEntryIsKeptNotedUntilItIsTakenOut() throws {
+    func testARemovedDeviceStartsAgainWithTheNextDeviceIfThereIsOneElseANewOne() throws {
+        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
         let store = MemoryChatKeyStore()
+        try store.save(legacyRecord(e, s), person: "p1")
         let fresh = Self.softFresh("p1")
-        try ChatReplaced.remember(fresh.id, person: "p1", in: store)
-        XCTAssertEqual(ChatReplaced.pending(person: "p1", in: store), "ZZZZZZZZZZZZ")
-        XCTAssertNil(try store.load(person: "p1"))      // never read as the person's device
+        try ChatNextDevice.keep(fresh, in: store)
+        let first = try ChatDeviceKeeper.startAgain(for: "p1", in: store)
+        XCTAssertEqual(first.id, fresh.id)
+        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, fresh.id)
+        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
+        // with none noted it is a new device, kept in the place of the removed one
+        let second = try ChatDeviceKeeper.startAgain(for: "p1", in: store)
+        XCTAssertNotEqual(second.id, fresh.id)
+        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, second.id)
     }
 
     /// A store whose saves fail for the device (the Keychain refusing), as the second save in a replacement.

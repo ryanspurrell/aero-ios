@@ -210,63 +210,49 @@ final class ChatSession {
         var current: ChatDevice
         if let have = device { current = have } else { current = try ChatDeviceKeeper.device(for: person, in: keyStore) }
         if !registered {
-            try await api.register(device: current, label: ChatWords.deviceLabel)
+            do { try await api.register(device: current, label: ChatWords.deviceLabel) }
+            catch ChatAPI.Failure.deviceRemoved {
+                // removed from the person's list but still has its keys: it starts again with new ones, as a new device
+                current = try ChatDeviceKeeper.startAgain(for: person, in: keyStore)
+                try await api.register(device: current, label: ChatWords.deviceLabel)
+                renewedKeys = true
+            }
             guard g == generation else { throw ChatStale() }
             registered = true
         }
         if firstThisLaunch, let moved = await renewIfSafe(current) { current = moved }
         device = current
-        if firstThisLaunch { await takeOutReplaced() }
         return current
     }
 
     /// A device made by an earlier build with raw keys, on a phone with a Secure Enclave, is moved to the Secure Enclave, but only
-    /// when nothing is lost by it. The old keys are the only way to open what only the old device holds, so they are discarded last, and
-    /// only after Aero has taken the old device out of the list: Aero's own check, made in one step with the removal, refuses if anything
-    /// is held by it alone at that moment, whatever changed since this app last asked (another device removed in between included).
-    /// In this order:
-    ///  1. a read-only look at what the old device holds alone, to spare a new entry that would only be taken out again;
-    ///  2. the new device's id is noted (so a restart knows which entry to take out if this stops half way), and it is registered, which
-    ///     if the eight places are taken is refused and leaves the old one as it is;
-    ///  3. Aero takes the old device out (refused if it holds anything alone: the new entry is taken out again and the old one stays);
-    ///  4. only then are the new keys kept in its place (if that fails, the old device is registered again and stays in use).
-    /// Anything that goes wrong leaves the old device in use, and it is asked again at the next launch.
+    /// when nothing is lost by it. What the old device alone can open can only be opened with its keys, so they are discarded last, and
+    /// only after Aero has taken the old device out of the list, which it does only if the new device already holds a seal of every key
+    /// the old one does (Aero's check, made in one step with the removal: nothing changed since can slip through). In this order:
+    ///  1. the new device is made once and kept, private keys too, apart from the person's own (`ChatNextDevice`), because what is to be
+    ///     sealed to it can only be opened with them; it is registered (refused when the eight places are taken: the old one stays);
+    ///  2. Aero is asked to take the old device out for it: refused until the PC or another device has sealed everything to the new one;
+    ///     then the old device stays in use and this is asked again at the next launch (the new entry waits in the list meanwhile);
+    ///  3. only then are the new keys kept as the person's own (the old ones go), and the next device cleared. If that save fails the new
+    ///     device is used for this launch, and the next launch starts again with it, because Aero then refuses the old (removed) one.
     private func renewIfSafe(_ old: ChatDevice) async -> ChatDevice? {
         guard old.canMoveToEnclave else { return nil }
         let g = generation
-        guard let holds = try? await api.holds(old.id), holds.epochs == 0, g == generation else { return nil }
-        guard let fresh = try? ChatDevice.make(person: person), !fresh.isSoftware else { return nil }
         let who = person
-        guard (try? ChatReplaced.remember(fresh.id, person: who, in: keyStore)) != nil else { return nil }
-        func giveUp() async {
-            // the new entry is of no use: taken out again (it holds no keys), and forgotten once Aero has answered
-            if (try? await api.removeDevice(fresh.id)) != nil { ChatReplaced.clear(person: who, in: keyStore) }
+        let fresh: ChatDevice
+        if let next = ChatNextDevice.load(person: who, in: keyStore) { fresh = next }
+        else {
+            guard let made = try? ChatDevice.make(person: who), !made.isSoftware, (try? ChatNextDevice.keep(made, in: keyStore)) != nil else { return nil }
+            fresh = made
         }
-        do { try await api.register(device: fresh, label: ChatWords.deviceLabel) } catch { await giveUp(); return nil }
+        do { try await api.register(device: fresh, label: ChatWords.deviceLabel) }
+        catch ChatAPI.Failure.deviceRemoved { ChatNextDevice.clear(person: who, in: keyStore); return nil }   // taken out by the person: made again next time
+        catch { return nil }
         guard g == generation else { return nil }
-        do { try await api.removeDevice(old.id) } catch { await giveUp(); return nil }
-        do { try ChatDeviceKeeper.replace(old, with: fresh, in: keyStore) } catch {
-            // the old device was taken out of the list but its keys are still kept: it is put back and stays in use
-            _ = try? await api.register(device: old, label: ChatWords.deviceLabel)
-            await giveUp()
-            return nil
-        }
-        ChatReplaced.clear(person: who, in: keyStore)
+        do { try await api.removeDevice(old.id, replacedBy: fresh.id) } catch { return nil }
         renewedKeys = true
+        do { try ChatDeviceKeeper.replace(old, with: fresh, in: keyStore) } catch { /* used for this launch; see above */ }
         return fresh
-    }
-
-    /// An entry registered for a renewal that was not finished, taken out of the person's list (never the device now in use). The id
-    /// stays noted until Aero has answered, through a restart too, and is tried again at the next launch.
-    private func takeOutReplaced() async {
-        guard let old = ChatReplaced.pending(person: person, in: keyStore) else { return }
-        let who = person
-        // never the device now in use
-        guard old != device?.id else { ChatReplaced.clear(person: who, in: keyStore); return }
-        do {
-            try await api.removeDevice(old)
-            ChatReplaced.clear(person: who, in: keyStore)
-        } catch { /* kept: asked again next time */ }
     }
 
     func key(room: String, epoch: Int) -> SymmetricKey? { keys["\(room)|\(epoch)"] }
