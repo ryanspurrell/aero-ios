@@ -118,4 +118,29 @@ final class DayRequirementsTests: XCTestCase {
         XCTAssertFalse((Pointer(d.rows[0]).meta ?? "").lowercased().contains("late"))
         XCTAssertFalse((Pointer(d.rows[0]).meta ?? "").contains("Not done"))
     }
+
+    /// Not run when written. A skipped row reads Skipped, quietly; done_state is the four values and rides on the row.
+    func testASkippedRowIsQuietAndCarriesTheFourValuedState() throws {
+        let d = try day(rows: [item("\"id\":\"s1\",\"title\":\"Water ferns\",\"state\":\"skipped\",\"mark_text\":\"Skipped\",\"done_state\":\"no\""),
+                               item("\"id\":\"s2\",\"title\":\"Wipe desk\",\"state\":\"done\",\"mark_text\":\"Done and skipped\",\"done_state\":\"all\"")])
+        XCTAssertTrue(Pointer(d.rows[0]).quiet)
+        XCTAssertEqual(Pointer(d.rows[0]).meta, "Skipped")
+        XCTAssertEqual(d.rows[0].doneState, "no")
+        XCTAssertFalse(Pointer(d.rows[1]).quiet)
+        XCTAssertEqual(d.rows[1].doneState, "all")
+        XCTAssertTrue((Pointer(d.rows[1]).meta ?? "").contains("Done and skipped"))
+    }
+
+    /// Not run when written. Skip records a dated observation and keeps a done as well (both kept; nothing deleted).
+    @MainActor
+    func testSkipThenDoneKeepsBothObservations() async throws {
+        let phone = PhoneOrganizer(store: try PhoneStore(), reader: CannedQuickAddReader(), clock: { Date() })
+        try await phone.send("add", ["title": .string("Wipe desk")])
+        let id = try phone.store.book().now.keys.first!
+        try await phone.send("skip", ["id": .string(id)])
+        try await phone.send("complete", ["id": .string(id)])
+        let rec = try phone.store.book().now[id]!.rec
+        XCTAssertEqual(rec["skipped_ats"]?.arrayValue?.count, 1)
+        XCTAssertEqual(rec["done_ats"]?.arrayValue?.count, 1)
+    }
 }

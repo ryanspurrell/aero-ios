@@ -95,6 +95,12 @@ final class OrganizerDayStore: ObservableObject {
         catch { failure = error.localizedDescription; return false }
     }
 
+    /// Skip: records that she skipped it, dated; nothing is deleted and it can be done after (both are then kept and shown as both).
+    func skip(_ id: String) async -> Bool {
+        do { try await api.send("skip", ["id": .string(id)]); return true }
+        catch { failure = error.localizedDescription; return false }
+    }
+
     func askForHelp() async -> Bool {
         do { try await api.send("help_ask"); return true } catch { failure = error.localizedDescription; return false }
     }

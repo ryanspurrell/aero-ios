@@ -244,15 +244,22 @@ struct SimpleDayView: View {
     let open: (OpenRef) -> Void
     let zoom: Namespace.ID
     @State private var done = false
+    @State private var skipped = false
     @State private var asked = false
+    /// Tied things have no first: the one drawn is the viewer's (their reading direction), the others are named beside it.
+    @Environment(\.layoutDirection) private var direction
 
     var body: some View {
         let s = day.simple
+        let ordered = TieOrder.firstNextItem(s, rightToLeft: direction == .rightToLeft)
         VStack(alignment: .leading, spacing: 16) {
             Text(s.greeting).fx(TypeToken(size: 32, weight: 800), style: .largeTitle).foregroundStyle(Look.Palette.fg)
             Text(s.clock).fx(Look.Size.nextMeta, style: .title3).foregroundStyle(Look.Palette.soft)
             if let waiting = (day.rows + day.anytime).first(where: { $0.question != nil }) { PointerView(pointer: Pointer(waiting), size: .question, actions: .day(store, open: open)) }
-            if let n = s.next { nextCard(n) } else { Text(s.none.isEmpty ? "Your day is clear." : s.none).fx(Look.Size.nextMeta, style: .title3) }
+            if let n = ordered {
+                nextCard(n, also: (s.nexts ?? []).filter { $0.id != n.id || $0.timeText != n.timeText }.map(\.title)
+                            + (s.nexts == nil ? (n.also ?? []).map(\.title) : []))
+            } else { Text(s.none.isEmpty ? "Your day is clear." : s.none).fx(Look.Size.nextMeta, style: .title3) }
             if !s.unmarked.isEmpty { listCard("Not marked done", s.unmarked) }
             if !s.later.isEmpty { listCard("Later", s.later) }
             ForEach(s.did) { line in Label(line.text ?? "", systemImage: "checkmark").fx(Look.Size.nextMeta).foregroundStyle(Look.Palette.fg) }
@@ -261,29 +268,46 @@ struct SimpleDayView: View {
         .matchedGeometryEffect(id: day.date, in: zoom)
     }
 
-    private func nextCard(_ n: SimpleNext) -> some View {
+    private func nextCard(_ n: SimpleNext, also: [String]) -> some View {
         VStack(alignment: .leading, spacing: Look.Space.tight) {
             Text("NEXT").fx(Look.Size.nextLabel, style: .caption1).tracking(1).foregroundStyle(Look.Palette.label)
             Text(n.title).fx(Look.Size.nextName, style: .title1).foregroundStyle(Look.Palette.ink)
             Text(n.line).fx(Look.Size.nextMeta, style: .subheadline).foregroundStyle(Look.Palette.label)
-            if let also = n.also, !also.isEmpty {
-                Text("Also then: " + also.map(\.title).joined(separator: ", ")).fx(Look.Size.nextMeta, style: .subheadline).foregroundStyle(Look.Palette.label)
+            if !also.isEmpty {
+                Text("Also then: " + also.joined(separator: ", ")).fx(Look.Size.nextMeta, style: .subheadline).foregroundStyle(Look.Palette.label)
             }
-            Button {
-                if n.source == "colony" { open(n.open); return }
-                Task { if await store.setDone(n.open.id, done: !done) { done.toggle() } }
-            } label: {
-                // recorded where it was pressed, and taken back there
-                Text(n.source == "colony" ? "Open" : done ? "Done. Tap to undo" : n.button).fx(Look.Size.nextName, style: .title2)
-                    .foregroundStyle(Look.Palette.accent)
-                    .frame(maxWidth: .infinity, minHeight: 64)
-                    .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusItem, style: .continuous).fill(Look.Palette.ink))
+            HStack(spacing: 10) {
+                Button {
+                    if n.source == "colony" { open(n.open); return }
+                    Task { if await store.setDone(n.open.id, done: !done) { done.toggle() } }
+                } label: {
+                    // recorded where it was pressed, and taken back there
+                    Text(n.source == "colony" ? "Open" : done ? "Done. Tap to undo" : n.button).fx(Look.Size.nextName, style: .title2)
+                        .foregroundStyle(Look.Palette.accent)
+                        .frame(maxWidth: .infinity, minHeight: 64)
+                        .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusItem, style: .continuous).fill(Look.Palette.ink))
+                }
+                .buttonStyle(BubblePressStyle())
+                .disabled(skipped)
+                if n.source != "colony" {
+                    // Skip, quiet beside Done: it records that she skipped it, dated; nothing is deleted
+                    Button {
+                        Task { if await store.skip(n.open.id) { skipped = true } }
+                    } label: {
+                        Text(skipped ? "Skipped" : "Skip").fx(Look.Size.nextMeta, style: .headline)
+                            .foregroundStyle(Look.Palette.ink).opacity(0.75)
+                            .frame(minHeight: 64).padding(.horizontal, 14)
+                    }
+                    .buttonStyle(BubblePressStyle())
+                    .disabled(skipped)
+                    .accessibilityLabel("Skip \(n.title)")
+                }
             }
-            .buttonStyle(BubblePressStyle())
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .bubble(n.color, radius: Look.Bubble.radiusNext)
+        .opacity(skipped ? 0.6 : 1)
     }
 
     private func listCard(_ title: String, _ lines: [SimpleLine]) -> some View {

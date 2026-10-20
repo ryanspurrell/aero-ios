@@ -92,7 +92,7 @@ LOOK_ICONS = ("list", "tasks", "cart", "book", "place", "home", "heart", "money"
 _LOOKS = [LOOKS]                                     # the kinds' looks for this answer (the person's own over the defaults)
 
 
-QUIET = ("moved", "was_due")      # states of a row that only says where a thing went or was due: never next, late, counted or busy
+QUIET = ("moved", "was_due", "skipped")      # states of a row that only says where a thing went or was due: never next, late, counted or busy
 
 
 def _quiet(e):
@@ -106,12 +106,21 @@ def day_words(day, today):
 
 
 def _entry(source, kind, key, title, date, time="", end="", all_day=False, state="open", done_at="", since="", color=None, icon=None,
-           repeat=False, ref=None, question=None, mark="", mark_text="", moved_to=None):
+           repeat=False, ref=None, question=None, mark="", mark_text="", moved_to=None, done_state=None):
     c, i = _LOOKS[0][kind]
     return {"source": source, "type": kind, "id": key, "title": title, "date": date.isoformat(), "time": time, "time_text": clock_text(time),
             "end": end, "end_text": clock_text(end), "all_day": all_day, "state": state, "done_at": done_at, "done_at_text": clock_text(done_at),
             "since": since, "color": color or c, "icon": icon or i, "repeat": repeat, "open": ref or {"app": "organizer", "id": key},
-            "question": question, "mark": mark, "mark_text": mark_text, "moved_to": moved_to}
+            "question": question, "mark": mark, "mark_text": mark_text, "moved_to": moved_to,
+            # was it done? four values from the records (Aryn, 2026-10-19, "every button is one of the four values"): "yes" a done is
+            # recorded, "no" a skip is recorded, "all" both are, "none" neither (not marked done). A Colony event is not asked: "".
+            "done_state": ("" if source != "organizer" else "yes" if state == "done" else "no" if state == "skipped" else "none")
+            if done_state is None else done_state}
+
+
+def shown_(d):
+    """A datetime as the records keep it ('YYYY-MM-DD HH:MM')."""
+    return d.strftime("%Y-%m-%d %H:%M")
 
 
 def _hm(d):
@@ -160,6 +169,8 @@ def _one_row_each(day):
             win["mark_text"] = " \u00b7 ".join(x for x in (lose["mark_text"], was if was in win["mark_text"] else "") if x)
         if lose["state"] == "moved" and win["state"] == "done":
             win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], lose["mark_text"]) if x)      # done here, and put off to another day
+        if lose["state"] == "was_due" and win["state"] not in QUIET and lose["mark_text"] not in win["mark_text"]:
+            win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], lose["mark_text"]) if x)     # done elsewhere, and open again here
         if lose["state"] == "done" and win["state"] not in ("done",) + QUIET and was not in win["mark_text"]:
             win["mark_text"] = " \u00b7 ".join(x for x in (win["mark_text"], was) if x)
         if win["state"] == lose["state"] and lose["mark_text"] and lose["mark_text"] not in win["mark_text"]:
@@ -194,9 +205,12 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
     start = dt.datetime.combine(first, dt.time(), local("2000-01-01").tzinfo)
     stop = dt.datetime.combine(last, dt.time(23, 59, 59), start.tzinfo)
     scheduled = set()
+    skipped_keys, all_keys, states, skip_rows = set(), set(), {}, []
     for oid, item in book.now.items():
         rec = item["rec"]
-        if rec.get("type") == "task" and rec.get("status") == "open" and rec.get("event") and not (rec.get("deferred") or {}).get("until"):
+        pj = lists.get(rec.get("project")) or {}
+        shows = not rec.get("aside") and not ((rec.get("locked") is not False or pj.get("locked") or pj.get("private")) and not locked_on)
+        if shows and rec.get("type") == "task" and rec.get("status") == "open" and rec.get("event") and not (rec.get("deferred") or {}).get("until"):
             scheduled.add(rec["event"])       # a task put off no longer stands for its event: Colony's is still where it was
     for oid, item in book.now.items():
         rec = item["rec"]
@@ -226,16 +240,31 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             # the times that count (a past time nobody ticked is not claimed either way; the times a put-off holds back wait), then the cap
             moved_occ = when(rec) if held else None             # the one occurrence that was put off (the rest are their own instances)
             times = [o for o in times if (done_until and o <= done_until) or not (o.date() < today or (moved_occ is not None and o == moved_occ))][:ITEMS_MAX]
-            ticked_days = {o.date() for o in times if done_until and o <= done_until}
+            skipped_for = set(rec.get("skipped_for") or [])
+            ticked_days = {o.date() for o in times if done_until and o <= done_until and shown_(o) not in skipped_for}
+            # a put-off occurrence that was completed: its done row says it was done later, and the day it was done says what it was due
+            by_from = {m.get("from"): m for m in rec.get("done_moves") or []}
+            by_at = {m.get("at"): m for m in rec.get("done_moves") or []}
             for x in rec.get("done_ats") or []:
                 da = local(x)                                    # a completion on a day that has no ticked time of its own
                 if da and first <= da.date() <= last and da.date() not in ticked_days:
-                    put(_entry("organizer", kind, key, title, da.date(), _hm(da), state="done", done_at=_hm(da), repeat=True, **look))
+                    mv = by_at.get(x)
+                    was = "Was due %s" % day_words(local(mv["from"]).date(), today) if mv else ""
+                    put(_entry("organizer", kind, key, title, da.date(), _hm(da), state="done", done_at=_hm(da), repeat=True,
+                               mark="due_then_done" if mv else "", mark_text=was, **look))
             for o in times:
                 ticked = bool(done_until and o <= done_until)
+                if ticked and shown_(o) in skipped_for:
+                    # this occurrence was skipped: it reads Skipped, quiet (the act is the evidence)
+                    put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (rep_timed or o.hour or o.minute) else "", state="skipped",
+                               mark="skipped", mark_text="Skipped", repeat=True, **look))
+                    continue
                 put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (rep_timed or o.hour or o.minute) else "", state="done" if ticked else "open",
                            done_at=_hm(done_until) if ticked and done_until and done_until.date() == o.date() and (done_until.hour or done_until.minute) else "",
-                           repeat=True, question=q, **look))
+                           repeat=True, question=q,
+                           mark="due_then_done" if ticked and shown_(o) in by_from else "",
+                           mark_text=("Done later, on %s" % day_words(local(by_from[shown_(o)]["at"]).date(), today)) if ticked and shown_(o) in by_from else "",
+                           **look))
             if held and rule is not None:
                 # put off: the occurrence that was current goes to the new time. The new day has it as normal ("Moved from <old day>"), and
                 # stays when the day passes, as behind, like a task that is not repeating; the old day says where it went, quietly. The
@@ -268,6 +297,25 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             o = local(x)
             if o and (o.date() not in obs or o > obs[o.date()]):
                 obs[o.date()] = o
+        # a skip is a dated observation too (Aryn, 2026-10-19): the row reads "Skipped", quiet: evidence it was not done, so not "not marked done",
+        # and not done. The latest observation of a day is what that day shows; only the act is kept, never why
+        sk = {}
+        for x in rec.get("skipped_ats") or []:
+            o = local(x)
+            if o and (o.date() not in sk or o > sk[o.date()]):
+                sk[o.date()] = o
+        states[key] = "all" if obs and sk else "yes" if obs else "no" if sk else "none"
+        both = " \u00b7 Done and skipped" if obs and sk else ""
+        for day, so in sorted(sk.items()):
+            if first <= day <= last and day not in obs:           # the same day done and skipped is one row, "Done and skipped", below
+                e = _entry("organizer", kind, key, title, day, _hm(so), state="skipped", mark="skipped",
+                           mark_text="Done and skipped" if both else "Skipped", **look)
+                skip_rows.append(e)                              # a skip's own day row: it gives way to a place of the task on that day
+                put(e)
+        if sk and not obs and rec.get("status") == "open":
+            skipped_keys.add(key)                                # skipped and never done: its open places read as skipped
+        if sk and obs and rec.get("status") == "open":
+            all_keys.add(key)                                    # both recorded: its open places say so (and are not "not marked done")
         if obs:
             sched = when(rec)
             timed_due = _due_timed(rec)
@@ -278,7 +326,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                     at = _hm(sched) if sched and timed_due and sched.date() == day else _hm(da)
                     was = ("%s %s" % ("Was due" if sched < da else "Due", day_words(sched.date(), today))) if other and n == 0 else "Done again" if n else ""
                     put(_entry("organizer", kind, key, title, day, at, state="done", done_at=_hm(da), mark="due_then_done" if other and n == 0 else "",
-                               mark_text=was, **look))
+                               mark_text=" \u00b7 ".join(x for x in (was, "Done and skipped" if day in sk else "") if x), **look))
             if sched and sched.date() not in obs and first <= sched.date() <= last:
                 put(_entry("organizer", kind, key, title, sched.date(), _hm(sched) if timed_due else "", state="was_due", mark="due_then_done",
                            mark_text="Done %s, on %s" % ("later" if sched < earliest else "earlier", day_words(earliest.date(), today)), **look))
@@ -361,6 +409,17 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                        time=s[11:16] if timed else "", end=e[11:16] if timed and e[:10] == s[:10] and len(e) >= 16 else "",
                        all_day=all_day or not timed, ref=ref, color=ev.get("colour") or None))
             day += dt.timedelta(days=1)
+    for e in order:
+        if e["source"] == "organizer" and not e["repeat"] and e["id"] in states:
+            e["done_state"] = states[e["id"]]                    # one answer for the task on every row of it, for every surface to read
+            if e["id"] in skipped_keys and e["state"] in ("open", "unmarked"):
+                e["state"], e["mark"], e["mark_text"], e["since"] = "skipped", "skipped", "Skipped", ""
+            elif e["id"] in all_keys and e["state"] in ("open", "unmarked"):
+                e["mark_text"] = " \u00b7 ".join(x for x in (e["mark_text"], "Done and skipped") if x)
+    skip_ids = {id(e) for e in skip_rows}
+    placed = {(e["date"], e["id"]) for e in order if e["source"] == "organizer" and id(e) not in skip_ids and not e["repeat"]}
+    for date in list(out):
+        out[date] = [e for e in out[date] if not (id(e) in skip_ids and (e["date"], e["id"]) in placed)]
     for date, day in list(out.items()):
         out[date] = _one_row_each(day)
     kept = {id(e) for day in out.values() for e in day}
@@ -394,7 +453,7 @@ def _unmarked(e, day, today, is_today, now_hm):
     nothing recorded reads as not marked done; Organizer has no record of a skipped time, so nothing is claimed as not done (the smallest way
     to say so would be a `skipped_ats` beside `done_ats`, set by a Skip action: proposed, not built). It stays visible. A Colony event is not
     a task and is not asked this."""
-    if e["source"] != "organizer" or e["state"] not in ("open", "unmarked"):
+    if e["source"] != "organizer" or e["state"] not in ("open", "unmarked") or e.get("done_state", "none") != "none":
         return False
     return e["state"] == "unmarked" or day < today or bool(is_today and e["time"] and e["time"] <= now_hm)
 

@@ -67,6 +67,9 @@ struct DayItem: Codable, Hashable, Identifiable {
     var endText: String?
     var allDay: Bool?
     var state: String?                // open, done, unmarked; "moved" and "was_due" are quiet rows that only say where a thing went or was due
+    /// Was it done? Four values from the records (Aryn, 2026-10-19): "yes" a done is recorded, "no" a skip is, "all" both, "none" neither
+    /// (not marked done). One answer for every row of a task, so every surface reads the same thing.
+    var doneState: String?
     var markText: String?             // "Moved from Thursday", "Moved to Friday 4:00 PM", "Done later, on Saturday", "Was due Thursday"
     var movedTo: MovedTo?
     var doneAtText: String?
@@ -83,7 +86,7 @@ struct DayItem: Codable, Hashable, Identifiable {
     var text: String?                 // a "free" row's words
 
     enum CodingKeys: String, CodingKey {
-        case kind, id, source, type, title, time, timeText, endText, allDay, state, doneAtText, since, color, icon, markText, movedTo
+        case kind, id, source, type, title, time, timeText, endText, allDay, state, doneAtText, since, color, icon, markText, movedTo, doneState
         case isRepeat = "repeat"
         case open, question, unmarked, until, untilWords, text
     }
@@ -102,6 +105,7 @@ struct DayItem: Codable, Hashable, Identifiable {
         allDay = try c.decodeIfPresent(Bool.self, forKey: .allDay)
         state = try c.decodeIfPresent(String.self, forKey: .state)
         markText = try c.decodeIfPresent(String.self, forKey: .markText)
+        doneState = try c.decodeIfPresent(String.self, forKey: .doneState)
         movedTo = try c.decodeIfPresent(MovedTo.self, forKey: .movedTo)
         doneAtText = try c.decodeIfPresent(String.self, forKey: .doneAtText)
         since = try c.decodeIfPresent(String.self, forKey: .since)
@@ -115,6 +119,11 @@ struct DayItem: Codable, Hashable, Identifiable {
         untilWords = try c.decodeIfPresent(String.self, forKey: .untilWords)
         text = try c.decodeIfPresent(String.self, forKey: .text)
     }
+}
+
+extension DayItem {
+    /// One identity per row: a repeat can have several rows under one task id on a day (its own times, a put-off one, a done one).
+    var rowKey: String { id + "|" + (timeText ?? "") + "|" + (state ?? "") + "|" + (markText ?? "") }
 }
 
 struct SimpleNext: Codable, Hashable {

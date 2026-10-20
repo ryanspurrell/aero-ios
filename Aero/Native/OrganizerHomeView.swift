@@ -42,8 +42,9 @@ struct OrganizerHomeScreen: View {
 
     private func scrollToNext(_ proxy: ScrollViewProxy) {
         let rtl = UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft
-        guard let day = store.answer?.day, let id = TieOrder.firstNext(day.simple, rightToLeft: rtl), let row = day.rows.first(where: { $0.id == id }) else { return }
-        withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { proxy.scrollTo(row.id, anchor: .top) }
+        guard let day = store.answer?.day, let n = TieOrder.firstNextItem(day.simple, rightToLeft: rtl),
+              let row = day.rows.first(where: { $0.id == n.id && $0.state == "open" && $0.timeText == n.timeText }) else { return }
+        withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { proxy.scrollTo(row.rowKey, anchor: .top) }
     }
 
     // MARK: header: the date line, and a quiet menu

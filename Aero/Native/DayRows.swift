@@ -23,15 +23,16 @@ struct DayRows: View {
         // the home is today's next and what is left: a quiet row (only where a thing went or was due) is the day view's, as on the web home
         let rows = TieOrder.arrange(day.rows, rightToLeft: direction == .rightToLeft).filter { !(bigNext && Pointer.isQuiet($0.state)) }
         let anytime = TieOrder.arrange(day.anytime, rightToLeft: direction == .rightToLeft).filter { !(bigNext && Pointer.isQuiet($0.state)) }
-        let nextID = bigNext ? TieOrder.firstNext(day.simple, rightToLeft: direction == .rightToLeft) : nil
+        let nextItem = bigNext ? TieOrder.firstNextItem(day.simple, rightToLeft: direction == .rightToLeft) : nil
         VStack(alignment: .leading, spacing: Look.Space.gap) {
             SpineColumn(metrics: metrics, spacing: Look.Space.gap) {
-                ForEach(rows) { row in
+                ForEach(rows, id: \.rowKey) { row in
                     switch row.kind {
                     case "now": NowRow(metrics: metrics, timeText: row.timeText ?? "")
                     case "free": FreeRow(metrics: metrics, text: row.text ?? "")
                     default:
-                        let isNext = row.id == nextID && row.state == "open"      // not the same task's done row (a repeat has both)
+                        // the open row at the Next time: not the same task's done row, nor its other instance (a repeat has both, under one id)
+                        let isNext = nextItem != nil && row.id == nextItem?.id && row.state == "open" && row.timeText == nextItem?.timeText
                         VStack(alignment: .leading, spacing: Look.Space.tight) {
                             SpineRow(metrics: metrics, timeText: row.timeText ?? "", knot: Fingus.hue(row.color).base, centered: !isNext) {
                                 PointerView(pointer: Pointer(row), size: isNext ? .next : .block, actions: actions)
@@ -40,14 +41,14 @@ struct DayRows: View {
                                 PointerView(pointer: Pointer(row), size: .question, actions: actions).padding(.leading, metrics.blockX)
                             }
                         }
-                        .id(row.id)
+                        .id(row.rowKey)
                     }
                 }
             }
             if !day.anytime.isEmpty {
                 Text(day.isToday ? "Today, no set time" : "No set time").fx(Look.Size.question, style: .subheadline).foregroundStyle(Look.Palette.soft)
                     .padding(.top, Look.Space.hair)
-                ForEach(anytime) { item in
+                ForEach(anytime, id: \.rowKey) { item in
                     VStack(alignment: .leading, spacing: Look.Space.tight) {
                         PointerView(pointer: Pointer(item), size: .block, actions: actions)
                         if inlineQuestions, item.question != nil { PointerView(pointer: Pointer(item), size: .question, actions: actions) }
@@ -60,8 +61,8 @@ struct DayRows: View {
 
     /// The id the home scrolls to so Next is the first thing seen (earlier things sit above it).
     var nextRowID: String? {
-        TieOrder.firstNext(day.simple, rightToLeft: UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft)
-            .flatMap { id in day.rows.first { $0.id == id }?.id }
+        TieOrder.firstNextItem(day.simple, rightToLeft: UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft)
+            .flatMap { n in day.rows.first { $0.id == n.id && $0.state == "open" && $0.timeText == n.timeText }?.rowKey }
     }
 }
 
@@ -81,6 +82,13 @@ enum TieOrder {
         }
         flush()
         return out
+    }
+
+    /// The thing drawn as the big Next (its id and time, since one repeat can have two open instances under one id).
+    static func firstNextItem(_ s: SimpleDay, rightToLeft: Bool) -> SimpleNext? {
+        let all = s.nexts ?? []
+        if all.isEmpty { return s.next }
+        return rightToLeft ? all.last : all.first
     }
 
     /// The id drawn as the big Next: the first of the things that are next together, in the viewer's reading direction.

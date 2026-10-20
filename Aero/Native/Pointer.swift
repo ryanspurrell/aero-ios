@@ -73,7 +73,7 @@ extension Pointer {
     /// The owner name of a pointer that opens a day of the calendar rather than a thing.
     static let dayApp = "organizer-day"
 
-    static func isQuiet(_ state: String?) -> Bool { state == "moved" || state == "was_due" }
+    static func isQuiet(_ state: String?) -> Bool { state == "moved" || state == "was_due" || state == "skipped" }
 
     /// A week's or a month's pill.
     init(_ pill: Pill) {

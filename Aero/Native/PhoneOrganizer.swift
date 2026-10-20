@@ -78,7 +78,7 @@ final class PhoneOrganizer: OrganizerBackend {
 
     func send(_ name: String, _ args: [String: JSONValue]) async throws {
         switch name {
-        case "complete", "reopen", "drop", "update": try await change(name, args)
+        case "complete", "skip", "reopen", "drop", "update": try await change(name, args)
         case "quickadd": _ = try await quickAdd(args["text"]?.stringValue ?? "")
         case "help_ask", "day_mode", "look_set": return          // a helper and the view's mode belong to a PC
         default: throw Failure.notOnPhone(name)
@@ -115,6 +115,24 @@ final class PhoneOrganizer: OrganizerBackend {
             } else {
                 rec["status"] = .string("done"); observeDone(&rec); why = "done"
             }
+        case "skip":
+            // Skip beside Done (Aryn, 2026-10-19): a dated observation that she skipped it, kept like `done_ats`; it accumulates, nothing is
+            // deleted, and only the act is stored (organizer_service.py `skip`).
+            guard type == "task" else { throw Failure.noSuchItem }
+            let at = JSONValue.string(shown(clock()))
+            var seen = rec["skipped_ats"]?.arrayValue ?? []
+            if rec["repeat"]?.stringValue?.isEmpty == false {
+                let occ = try await reader.call("occurrence", ["rec": .object(rec)])
+                guard let when = occ.objectValue?["at"]?.stringValue else { throw Failure.noSuchItem }
+                rec["skipped_for"] = .array((rec["skipped_for"]?.arrayValue ?? []) + [.string(when)])
+                rec["done_until"] = .string(when)
+                rec["deferred"] = nil
+                why = "skipped for \(when)"
+            } else {
+                if let last = seen.last?.stringValue, last.prefix(10) == at.stringValue?.prefix(10) { seen.removeLast() }
+                why = "skipped"
+            }
+            rec["skipped_ats"] = .array(seen + [at])
         case "reopen":
             rec["status"] = .string(firstStatus(type))
             // an older record's one done time is kept as an observation
@@ -145,7 +163,7 @@ final class PhoneOrganizer: OrganizerBackend {
         let at = JSONValue.string(shown(clock()))
         var seen = rec["done_ats"]?.arrayValue ?? (rec["done_at"].map { [$0] } ?? [])
         // one a day is shown, so one a day is kept (the versions log keeps every time)
-        if let last = seen.last?.stringValue, last.prefix(10) == at.stringValue?.prefix(10) { seen.removeLast() }
+        if rec["repeat"]?.stringValue?.isEmpty != false, let last = seen.last?.stringValue, last.prefix(10) == at.stringValue?.prefix(10) { seen.removeLast() }
         seen.append(at)
         rec["done_ats"] = .array(seen)
         rec["done_at"] = at
