@@ -457,3 +457,32 @@ enum ChatDeviceKeeper {
         return next
     }
 }
+
+
+/// Before the old device is taken out for a new one, whether the new one can really open what the old one can. Aero holds the seals but
+/// cannot open them, so it can only check that a row exists; this opens each one here.
+enum ChatRenewalCheck {
+    /// Asked of a room answer to leave its messages out: past any sequence number.
+    static let noMessages = 1_000_000_000
+
+    /// How many of the old device's room keys the new device does not get identically. Each pair is one chat's answer as asked for the old
+    /// device and as asked for the new one. A seal the old device itself cannot open is not counted: there is no key to compare it to.
+    static func unopened(_ pairs: [(ChatRoomAnswer, ChatRoomAnswer)], old: ChatDevice, fresh: ChatDevice) -> Int {
+        var bad = 0
+        for (theirs, mine) in pairs {
+            for seal in theirs.seals {
+                guard let key = opened(seal, in: theirs, by: old) else { continue }
+                guard let got = mine.seals.first(where: { $0.epoch == seal.epoch }).flatMap({ opened($0, in: mine, by: fresh) }),
+                      raw(got) == raw(key) else { bad += 1; continue }
+            }
+        }
+        return bad
+    }
+
+    private static func opened(_ seal: ChatSeal, in answer: ChatRoomAnswer, by device: ChatDevice) -> SymmetricKey? {
+        guard let sealer = (answer.devices[seal.byPerson] ?? []).first(where: { $0.device == seal.byDevice }) else { return nil }
+        return try? ChatCrypto.unseal(room: answer.id, seal: seal, sealerEcdh: sealer.ecdh, device: device)
+    }
+
+    private static func raw(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
+}

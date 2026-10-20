@@ -310,10 +310,51 @@ final class ChatTests: XCTestCase {
         XCTAssertTrue(ChatWords.deviceLabel.count <= 40)
     }
 
+    // MARK: the new device must really open what the old one can
+
+    /// A room's answer for one device: the room key sealed to it by `sealer`, as Aero lists it.
+    private func answer(room: String, key: SymmetricKey, epochs: [Int] = [0], to d: ChatDevice, by sealer: ChatDevice) throws -> ChatRoomAnswer {
+        var seals: [ChatSeal] = []
+        for e in epochs {
+            let out = try ChatCrypto.seal(room: room, epoch: e, key: key, to: [ChatDeviceKeys(device: d.id, ecdh: d.ecdhPublic, personID: d.person)], person: d.person, from: sealer)[0]
+            seals.append(ChatSeal(epoch: e, byPerson: sealer.person, byDevice: sealer.id, iv: out.iv, ct: out.ct))
+        }
+        let info = ChatDeviceInfo(device: sealer.id, ecdh: sealer.ecdhPublic, sign: sealer.signPublic, label: nil, personID: nil, isPrivate: nil)
+        return ChatRoomAnswer(id: room, name: nil, epoch: epochs.last ?? 0, ai: nil, isLocked: nil, members: [], messages: [], seals: seals,
+                              devices: [sealer.person: [info]], holders: nil, writing: nil, me: nil)
+    }
+
+    func testAReplacementThatOpensToTheSameKeysIsAccepted() throws {
+        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1")
+        let key = ChatCrypto.freshKey()
+        let pair = (try answer(room: "rabc", key: key, epochs: [0, 1], to: old, by: pc), try answer(room: "rabc", key: key, epochs: [0, 1], to: fresh, by: pc))
+        XCTAssertEqual(ChatRenewalCheck.unopened([pair], old: old, fresh: fresh), 0)
+    }
+
+    func testAReplacementSealThatIsOnlyARowOrForTheWrongDeviceOrKeyIsNotAccepted() throws {
+        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1"), other = Self.soft("p1")
+        let key = ChatCrypto.freshKey()
+        let theirs = try answer(room: "rabc", key: key, epochs: [0, 1], to: old, by: pc)
+        // sealed to another device: a row exists, the new phone cannot open it
+        let wrongDevice = try answer(room: "rabc", key: key, epochs: [0, 1], to: other, by: pc)
+        XCTAssertEqual(ChatRenewalCheck.unopened([(theirs, wrongDevice)], old: old, fresh: fresh), 2)
+        // junk of the right shape
+        var junk = try answer(room: "rabc", key: key, epochs: [0, 1], to: fresh, by: pc)
+        junk.seals[1].ct = ChatBase64.encode(Data(repeating: 7, count: 48))
+        XCTAssertEqual(ChatRenewalCheck.unopened([(theirs, junk)], old: old, fresh: fresh), 1)
+        // opens, but to another room key
+        let differs = try answer(room: "rabc", key: ChatCrypto.freshKey(), epochs: [0, 1], to: fresh, by: pc)
+        XCTAssertEqual(ChatRenewalCheck.unopened([(theirs, differs)], old: old, fresh: fresh), 2)
+        // an epoch with no seal at all
+        var short = try answer(room: "rabc", key: key, epochs: [0, 1], to: fresh, by: pc)
+        short.seals.removeLast()
+        XCTAssertEqual(ChatRenewalCheck.unopened([(theirs, short)], old: old, fresh: fresh), 1)
+    }
+
     func testNoWordOfChatHasAnEmoji() {
         let words: [String] = [ChatWords.tab, ChatWords.listTitle, ChatWords.newChat, ChatWords.empty, ChatWords.composerPrompt, ChatWords.send, ChatWords.stop,
                                ChatWords.back, ChatWords.startTitle, ChatWords.startNote, ChatWords.lockedNeedsUnlock, ChatWords.unlockKey, ChatWords.lockedShut,
-                               ChatWords.waitingForKeys, ChatWords.lockedTitle, ChatWords.deviceLabel, ChatWords.devicesFull(8), ChatWords.devicesFull(0), ChatOpener.beforeYouJoined, ChatOpener.notVerified, ChatOpener.notOpened,
+                               ChatWords.waitingForKeys, ChatWords.renewalStopped, ChatWords.lockedTitle, ChatWords.deviceLabel, ChatWords.devicesFull(8), ChatWords.devicesFull(0), ChatOpener.beforeYouJoined, ChatOpener.notVerified, ChatOpener.notOpened,
                                ChatPrivacy.open.line, ChatPrivacy.locked.line]
         for w in words {
             for scalar in w.unicodeScalars { XCTAssertFalse(scalar.properties.isEmojiPresentation, w) }
