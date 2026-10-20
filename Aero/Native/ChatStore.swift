@@ -230,8 +230,8 @@ final class ChatSession {
 
     /// A device made by an earlier build with raw keys, on a phone with a Secure Enclave, is moved to the Secure Enclave, but only
     /// when nothing is lost by it. What the old device alone can open can only be opened with its keys, so they are discarded last, and
-    /// only after Aero has taken the old device out of the list, which it does only if the new device already holds a seal of every key
-    /// the old one does (Aero's check, made in one step with the removal: nothing changed since can slip through). In this order:
+    /// only after Aero has taken the old device out of the list, which it does only if the new device has proved it opened its seal of every
+    /// key the old one holds (Aero's check, made in one step with the removal: nothing changed since can slip through). In this order:
     ///  1. the new device is made once and kept, private keys too, apart from the person's own (`ChatNextDevice`), because what is to be
     ///     sealed to it can only be opened with them; it is registered (refused when the eight places are taken: the old one stays);
     ///  2. Aero is asked to take the old device out for it: refused until the PC or another device has sealed everything to the new one;
@@ -252,8 +252,9 @@ final class ChatSession {
         catch ChatAPI.Failure.deviceRemoved { ChatNextDevice.clear(person: who, in: keyStore); return nil }   // taken out by the person: made again next time
         catch { return nil }
         guard g == generation else { return nil }
-        // Aero can only see that a seal exists, not whether it opens: so this phone opens every one with the new keys, and compares the
-        // key with the one the old device gets, before the old device is asked to go. Anything else stops here, with the old device kept.
+        // Aero can only see that a seal exists, not whether it opens: so this phone opens every one (every room and epoch, hidden or not) with
+        // the new keys, compares the key with the one the old device gets, and proves it to Aero, before the old device is asked to go.
+        // Anything else stops here, with the old device kept.
         guard await replacementOpensEverything(old: old, fresh: fresh) else {
             if g == generation { renewalProblem = ChatWords.renewalStopped }
             return nil
@@ -265,17 +266,17 @@ final class ChatSession {
         return fresh
     }
 
-    /// Every chat's keys as the old device is sealed them and as the new device is: asked of Aero room by room. False when any room cannot
-    /// be asked or any seal of the new device does not open to the key the old one gets (`ChatRenewalCheck`).
+    /// Every key the old device holds, in every room and epoch, hidden rooms too: the full list comes from Aero's `devices/keys.json` (a
+    /// device's own keys, no content, not held back by Locked), not from the chat list, which leaves out a Locked chat while Locked is shut.
+    /// Each is opened here with the new keys and compared with what the old device gets, and a signed proof of each is sent to Aero, which
+    /// removes the old device only once it has one for all of them. False when anything cannot be asked, does not open to the same key, or
+    /// cannot be proved (`ChatRenewalCheck.prove`).
     private func replacementOpensEverything(old: ChatDevice, fresh: ChatDevice) async -> Bool {
-        guard let rooms = try? await api.rooms() else { return false }
-        var pairs: [(ChatRoomAnswer, ChatRoomAnswer)] = []
-        for row in rooms.rooms {
-            guard let theirs = try? await api.room(row.id, device: old.id, after: ChatRenewalCheck.noMessages),
-                  let mine = try? await api.room(row.id, device: fresh.id, after: ChatRenewalCheck.noMessages) else { return false }
-            pairs.append((theirs, mine))
-        }
-        return ChatRenewalCheck.unopened(pairs, old: old, fresh: fresh) == 0
+        guard let theirs = try? await api.heldKeys(device: old.id), let mine = try? await api.heldKeys(device: fresh.id) else { return false }
+        let result = ChatRenewalCheck.prove(theirs: theirs, mine: mine, old: old, fresh: fresh)
+        guard result.unopened == 0 else { return false }
+        do { try await api.prove(device: fresh.id, proofs: result.proofs) } catch { return false }
+        return true
     }
 
     func key(room: String, epoch: Int) -> SymmetricKey? { keys["\(room)|\(epoch)"] }

@@ -440,8 +440,8 @@ enum ChatDeviceKeeper {
     }
 
     /// Keep `fresh` in the place of `old`, which is the one step that discards the old keys. Called only after Aero has taken the old
-    /// device out of the person's list, which it does (in one step with its check) only when `fresh` already holds a seal of every key the
-    /// old one does; never before: until then the old keys are the only way to open what it holds. A failed save throws and leaves the old
+    /// device out of the person's list, which it does (in one step with its check) only when `fresh` has proved it opened its seal of every key
+    /// the old one holds (`ChatRenewalCheck`); never before: until then the old keys are the only way to open what it holds. A failed save throws and leaves the old
     /// keys kept. The noted next device is cleared once `fresh` is the one kept.
     static func replace(_ old: ChatDevice, with fresh: ChatDevice, in store: ChatKeyStore) throws {
         try store.save(try fresh.kept(), person: old.person)
@@ -459,29 +459,49 @@ enum ChatDeviceKeeper {
 }
 
 
-/// Before the old device is taken out for a new one, whether the new one can really open what the old one can. Aero holds the seals but
-/// cannot open them, so it can only check that a row exists; this opens each one here.
+/// Before the old device is taken out for a new one, whether the new one can really open what the old one can, and saying so to Aero.
+/// Aero holds the seals but cannot open them, so a row proves nothing; this opens each one here, for EVERY room and epoch the old device
+/// holds (asked of `devices/keys.json`, which lists them whether or not the room is shown), and makes the signed proof Aero requires
+/// before it removes the old device.
 enum ChatRenewalCheck {
-    /// Asked of a room answer to leave its messages out: past any sequence number.
-    static let noMessages = 1_000_000_000
-
-    /// How many of the old device's room keys the new device does not get identically. Each pair is one chat's answer as asked for the old
-    /// device and as asked for the new one. A seal the old device itself cannot open is not counted: there is no key to compare it to.
-    static func unopened(_ pairs: [(ChatRoomAnswer, ChatRoomAnswer)], old: ChatDevice, fresh: ChatDevice) -> Int {
-        var bad = 0
-        for (theirs, mine) in pairs {
-            for seal in theirs.seals {
-                guard let key = opened(seal, in: theirs, by: old) else { continue }
-                guard let got = mine.seals.first(where: { $0.epoch == seal.epoch }).flatMap({ opened($0, in: mine, by: fresh) }),
-                      raw(got) == raw(key) else { bad += 1; continue }
-            }
-        }
-        return bad
+    /// What the new device signs to say it opened its seal for (room, epoch), the same text as the store's `opened_part`:
+    /// "chat-opened|room|epoch|person|device|sealhash|kc", where `sealhash` is the hex SHA-256 of "iv|ct" of the seal as stored.
+    static func openedPart(room: String, epoch: Int, person: String, device: String, sealHash: String, kc: String) -> Data {
+        Data("chat-opened|\(room)|\(epoch)|\(person)|\(device)|\(sealHash)|\(kc)".utf8)
     }
 
-    private static func opened(_ seal: ChatSeal, in answer: ChatRoomAnswer, by device: ChatDevice) -> SymmetricKey? {
-        guard let sealer = (answer.devices[seal.byPerson] ?? []).first(where: { $0.device == seal.byDevice }) else { return nil }
-        return try? ChatCrypto.unseal(room: answer.id, seal: seal, sealerEcdh: sealer.ecdh, device: device)
+    static func sealHash(iv: String, ct: String) -> String {
+        SHA256.hash(data: Data("\(iv)|\(ct)".utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The proofs for every key the old device holds that the new device opens to the identical key, and how many it does not. A seal the
+    /// old device itself cannot open counts as not opened too: Aero asks for a proof for every one, so such a replacement waits rather than
+    /// guessing that nothing is lost. A proof is the new device's signature over the seal as stored and a value (`kc`) only the room key
+    /// makes: HMAC-SHA256 of "chat-opened|room|epoch|person|device|sealhash", keyed by the key.
+    static func prove(theirs: ChatHeldKeys, mine: ChatHeldKeys, old: ChatDevice, fresh: ChatDevice) -> (proofs: [ChatOpenedProof], unopened: Int) {
+        var proofs: [ChatOpenedProof] = []
+        var bad = 0
+        for held in theirs.keys {
+            guard let key = opened(held, in: theirs, by: old),
+                  let seal = mine.keys.first(where: { $0.room == held.room && $0.epoch == held.epoch }),
+                  let got = opened(seal, in: mine, by: fresh), raw(got) == raw(key),
+                  let proof = proof(for: seal, key: got, by: fresh) else { bad += 1; continue }
+            proofs.append(proof)
+        }
+        return (proofs, bad)
+    }
+
+    private static func proof(for seal: ChatHeldKey, key: SymmetricKey, by fresh: ChatDevice) -> ChatOpenedProof? {
+        let h = sealHash(iv: seal.iv, ct: seal.ct)
+        let text = Data("chat-opened|\(seal.room)|\(seal.epoch)|\(fresh.person)|\(fresh.id)|\(h)".utf8)
+        let kc = ChatBase64.encode(Data(HMAC<SHA256>.authenticationCode(for: text, using: key)))
+        guard let sig = try? fresh.signRaw(openedPart(room: seal.room, epoch: seal.epoch, person: fresh.person, device: fresh.id, sealHash: h, kc: kc)) else { return nil }
+        return ChatOpenedProof(room: seal.room, epoch: seal.epoch, kc: kc, sig: ChatBase64.encode(sig))
+    }
+
+    private static func opened(_ held: ChatHeldKey, in all: ChatHeldKeys, by device: ChatDevice) -> SymmetricKey? {
+        guard let sealer = (all.devices[held.byPerson] ?? []).first(where: { $0.device == held.byDevice }) else { return nil }
+        return try? ChatCrypto.unseal(room: held.room, seal: held.seal, sealerEcdh: sealer.ecdh, device: device)
     }
 
     private static func raw(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }

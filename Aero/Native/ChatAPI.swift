@@ -135,6 +135,12 @@ final class ChatAPI {
         try await get("rooms/\(id).json", ["device": device, "after": String(after)], as: ChatRoomAnswer.self)
     }
 
+    /// Every key sealed to one of this person's own devices, by room and epoch, with no content of any room, and whether or not the room is
+    /// listed (Locked rooms are not while Locked is shut): they are the device's own keys.
+    func heldKeys(device: String) async throws -> ChatHeldKeys {
+        try await get("devices/keys.json", ["device": device], as: ChatHeldKeys.self)
+    }
+
     func busy(_ id: String) async throws -> Bool {
         struct Busy: Decodable { var busy: Bool }
         return try await get("rooms/\(id)/busy", as: Busy.self).busy
@@ -188,6 +194,21 @@ final class ChatAPI {
         do { _ = try await post("devices/remove", RemoveBody(device: id, replacedBy: replacedBy)) }
         catch let f as Failure where ChatAPI.alreadyGone(f) { return }
     }
+
+    /// This device says which of its seals it opened (`ChatRenewalCheck.prove`). Aero keeps only those that check, and takes the old device
+    /// out only once every room and epoch the old device holds has one from the new device. Sent in parts of `ChatAPI.proofsPerPost`.
+    func prove(device: String, proofs: [ChatOpenedProof]) async throws {
+        struct Body: Encodable { var device: String; var proofs: [ChatOpenedProof] }
+        var start = 0
+        repeat {
+            let part = Array(proofs[start..<min(start + ChatAPI.proofsPerPost, proofs.count)])
+            _ = try await post("devices/proofs", Body(device: device, proofs: part))
+            start += ChatAPI.proofsPerPost
+        } while start < proofs.count
+    }
+
+    /// Aero reads at most 2000 in one request; this is under it. Picked, not grounded.
+    static let proofsPerPost = 500
 
     struct NewRoom: Encodable {
         struct Member: Encodable { var kind: String; var name: String; var model: String }

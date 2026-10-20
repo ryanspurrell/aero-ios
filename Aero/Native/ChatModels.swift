@@ -131,6 +131,33 @@ struct ChatWriting: Equatable {
 }
 
 /// GET /rooms/<id>.json?device=<id>&after=<seq>.
+/// One key sealed to a device, by room and epoch and nothing else of the room: a row of Aero's `devices/keys.json`, listed whether or not the
+/// room is shown in the list (a Locked room is not while Locked is shut).
+struct ChatHeldKey: Codable, Equatable {
+    var room: String
+    var epoch: Int
+    var byPerson: String
+    var byDevice: String
+    var iv: String
+    var ct: String
+    enum CodingKeys: String, CodingKey { case room, epoch, iv, ct; case byPerson = "by_person"; case byDevice = "by_device" }
+    var seal: ChatSeal { ChatSeal(epoch: epoch, byPerson: byPerson, byDevice: byDevice, iv: iv, ct: ct) }
+}
+
+/// Every key sealed to one device, with the public keys of the devices that sealed them (`devices/keys.json`).
+struct ChatHeldKeys: Codable, Equatable {
+    var keys: [ChatHeldKey]
+    var devices: [String: [ChatDeviceInfo]]
+}
+
+/// A device's word that it opened its seal for one room and epoch, as `devices/proofs` takes it (see `ChatRenewalCheck.prove`).
+struct ChatOpenedProof: Codable, Equatable {
+    var room: String
+    var epoch: Int
+    var kc: String
+    var sig: String
+}
+
 struct ChatRoomAnswer: Codable, Equatable {
     var id: String
     var name: String?
