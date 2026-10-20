@@ -116,16 +116,22 @@ final class PhoneOrganizer: OrganizerBackend {
             } else if type != "task" {
                 rec["status"] = .string("done"); why = "done"
             } else if rec["repeat"]?.stringValue?.isEmpty == false {
-                let occ = try await reader.call("occurrence", ["rec": .object(rec)])
-                guard let at = occ.objectValue?["at"]?.stringValue else { throw Failure.noSuchItem }
-                // each occurrence is its own instance: a button names the one it is for (`occurrence`); with none it is the current one
-                let target = args["occurrence"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? at
+                // each occurrence is its own instance: a button names the one it is for (`occurrence`); with none it is the current one. The
+                // reader checks that a time named is one of the task's own (the PC's `repeat_target`) and refuses it otherwise, writing nothing.
+                let named = args["occurrence"]?.stringValue ?? ""
+                let got = try await reader.call("target", ["rec": .object(rec), "occurrence": .string(named)]).objectValue ?? [:]
+                guard let at = got["current"]?.stringValue, let target = got["at"]?.stringValue else { throw Failure.noSuchItem }
                 if case .number(let n)? = rec["done_count"] { rec["done_count"] = .number(n + 1) } else { rec["done_count"] = .number(1) }
                 let doneFor = (rec["done_for"]?.arrayValue ?? []).map { $0.stringValue ?? "" }
                 rec["done_for"] = .array(Array(NSOrderedSet(array: doneFor + [target])).compactMap { ($0 as? String).map(JSONValue.string) })
                 if target == at {
+                    // the occurrence that was put off is the one just done: keep that it was moved and when it was done (the PC's `done_moves`), so
+                    // its rows can say "Done later" and the day it was done "Was due"; the versions keep the deferral
+                    if let held = rec["deferred"]?.objectValue?["until"]?.stringValue {
+                        rec["done_moves"] = .array((rec["done_moves"]?.arrayValue ?? []) + [Self.move(from: at, to: held, at: shown(clock()))])
+                    }
                     rec["done_until"] = .string(at)
-                    rec["deferred"] = nil       // the occurrence that was put off is the one just done; the versions keep the deferral
+                    rec["deferred"] = nil
                 }
                 observeDone(&rec, presented: args["presented"], tap: tap(args, oid, before.id, occ: target))     // when, how it was shown, the rest of the tap
                 why = "done for \(target)"
@@ -137,23 +143,29 @@ final class PhoneOrganizer: OrganizerBackend {
             // deleted, and only the act is stored (organizer_service.py `skip`).
             guard type == "task" else { throw Failure.noSuchItem }
             let atText = shown(clock())
-            let entry = Presentation.observation(at: atText, presented: args["presented"], tap: tap(args, oid, before.id, occ: args["occurrence"]?.stringValue ?? ""))
             var seen = rec["skipped_ats"]?.arrayValue ?? []
+            var occText = ""                // which time the tap was for: the one named, else the current one (the PC's `tap_of`); none when it does not repeat
             if rec["repeat"]?.stringValue?.isEmpty == false {
-                let occ = try await reader.call("occurrence", ["rec": .object(rec)])
-                guard let current = occ.objectValue?["at"]?.stringValue else { throw Failure.noSuchItem }
-                let target = args["occurrence"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? current
+                let named = args["occurrence"]?.stringValue ?? ""
+                let got = try await reader.call("target", ["rec": .object(rec), "occurrence": .string(named)]).objectValue ?? [:]      // refused when it is not one of its times
+                guard let current = got["current"]?.stringValue, let target = got["at"]?.stringValue else { throw Failure.noSuchItem }
                 let skippedFor = (rec["skipped_for"]?.arrayValue ?? []).map { $0.stringValue ?? "" }
                 rec["skipped_for"] = .array(Array(NSOrderedSet(array: skippedFor + [target])).compactMap { ($0 as? String).map(JSONValue.string) })
                 if target == current {
+                    if let held = rec["deferred"]?.objectValue?["until"]?.stringValue {
+                        rec["skip_moves"] = .array((rec["skip_moves"]?.arrayValue ?? []) + [Self.move(from: current, to: held, at: atText)])
+                    }
                     rec["done_until"] = .string(current)
                     rec["deferred"] = nil
                 }
+                occText = target
                 why = "skipped for \(target)"
             } else {
                 why = "skipped"            // every tap is kept (the timeline shows one row a day)
             }
-            rec["skipped_ats"] = .array(seen + [entry])
+            let entry = Presentation.observation(at: atText, presented: args["presented"], tap: tap(args, oid, before.id, occ: occText))
+            seen.append(entry)
+            rec["skipped_ats"] = .array(seen)
         case "reopen":
             rec["status"] = .string(firstStatus(type))
             // an older record's one done time is kept as an observation
@@ -252,6 +264,12 @@ final class PhoneOrganizer: OrganizerBackend {
         let question = Self.question(oid: oid, rec: rec)
         return QuickAddOutcome(title: rec["title"]?.stringValue ?? line, typed: line, question: question, likeliest: Self.likeliest(rec),
                                saved: made.map { String($0.0.prefix(8)) }, when: question == nil ? Self.whenOf(rec) : nil)
+    }
+
+    /// What a Done or Skip of a put-off occurrence keeps (the PC's `done_moves` and `skip_moves`): which time, where it had been moved to, and when
+    /// it was acted on. BranchOrganizerDay/Repeats.lean `done_cur`, `skip_cur`: one record, only when the current time is acted on.
+    static func move(from: String, to: String, at: String) -> JSONValue {
+        .object(["from": .string(from), "to": .string(to), "at": .string(at)])
     }
 
     /// Whether the phone may show or hand on a record's words: marked Open itself, not private, and not in a list that is Locked or private

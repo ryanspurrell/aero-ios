@@ -33,5 +33,36 @@ class Upcoming(unittest.TestCase):
         self.assertEqual([x["fire"] for x in fires([r], days=5)], ["2026-10-20 09:00", "2026-10-23 09:00", "2026-10-24 09:00"])
 
 
+    def test_a_task_marked_open_but_private_is_not_told_and_an_unmarked_list_does_not_make_its_tasks_open(self):
+        recs = [rec("a", remind="2026-10-21 09:00", private=True),
+                rec("b", remind="2026-10-21 10:00", project="L"),
+                {"oid": "L", "id": "L-v1", "rec": {"type": "project", "title": "Old list"}}]            # a list made before the marker: unmarked is private
+        self.assertEqual(fires(recs), [])
+
+    def test_a_task_put_off_is_told_at_its_new_time_once_and_not_at_the_old_one(self):
+        r = rec("a", remind="2026-10-21 09:00", deferred={"until": "2026-10-21 10:00", "times": 1, "timed": True})
+        self.assertEqual([x["fire"] for x in fires([r])], ["2026-10-21 10:00"])
+        same = rec("b", remind="2026-10-21 10:00", deferred={"until": "2026-10-21 10:00", "times": 1, "timed": True})
+        self.assertEqual([x["fire"] for x in fires([same])], ["2026-10-21 10:00"], "one notice for one time")
+        date_only = rec("c", remind="2026-10-21 09:00", deferred={"until": "2026-10-22", "times": 1, "timed": False})
+        self.assertEqual([x["fire"] for x in fires([date_only])], [], "put off to a date with no hour: the old time waits and the date is not a time to be told")
+
+    def test_a_repeats_current_time_that_was_moved_is_told_at_the_new_time_only(self):
+        r = rec("r", repeat="FREQ=DAILY", start="2026-10-19 09:00", done_until="2026-10-20 09:00",
+                deferred={"until": "2026-10-21 11:30", "times": 1, "timed": True})
+        got = [x["fire"] for x in fires([r], days=3)]
+        self.assertEqual(got[:2], ["2026-10-21 11:30", "2026-10-22 09:00"])
+        self.assertNotIn("2026-10-21 09:00", got)
+
+    def test_the_time_a_button_names_must_be_one_of_the_tasks_own(self):
+        r = {"type": "task", "status": "open", "title": "t", "locked": False, "repeat": "FREQ=DAILY", "start": "2026-10-19 09:00"}
+        ok = json.loads(PB.call("target", json.dumps({"rec": r, "occurrence": "2026-10-22 09:00"})))
+        self.assertEqual(ok["ok"]["at"], "2026-10-22 09:00")
+        none = json.loads(PB.call("target", json.dumps({"rec": r, "occurrence": ""})))
+        self.assertEqual(none["ok"]["at"], none["ok"]["current"])
+        for bad in ("2026-10-22 09:01", "2026-10-18 09:00", "nonsense"):
+            self.assertIn("error", json.loads(PB.call("target", json.dumps({"rec": r, "occurrence": bad}))), bad)
+
+
 if __name__ == "__main__":
     unittest.main()

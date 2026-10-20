@@ -23,6 +23,12 @@ SPANS = ("day", "week", "month", "year")
 MODES = ("timeline", "simple")
 DEFAULT_MODE = "timeline"
 ITEMS_MAX = 400                                     # a year of tasks and events, never more rows than this are built
+# A repeat is run from its start to reach a day, so a very frequent one (every second) could make opening a year take minutes and gigabytes
+# before the cap above is applied. No more than this many of its times are looked at, counted from its start (BranchOrganizerDay/Spread.lean
+# `expand`). Picked, not grounded: measured here at about 4 microseconds a time with the test applied, so under a second at the most; a
+# daily repeat has 36500 times in a hundred years, an hourly one 8760 a year. A repeat so frequent that this runs out before the range shows
+# only what lies inside the first 200000 times.
+EXAMINE_MAX = 200000
 
 # The first word of a task, said back in the past ("Take pills" -> "You took pills at 8:05"). Only words in this list are changed; a
 # task that begins with any other word is said as "You finished take pills" so a wrong verb is never made up.
@@ -33,6 +39,29 @@ PAST = {"take": "took", "call": "called", "pay": "paid", "buy": "bought", "send"
         "renew": "renewed", "reply": "replied", "tidy": "tidied", "stretch": "stretched", "eat": "ate", "see": "saw", "visit": "visited",
         "pack": "packed", "fill": "filled", "charge": "charged", "bring": "brought", "clear": "cleared", "do": "did",
         "put": "put", "mail": "mailed", "ring": "rang", "meet": "met", "sort": "sorted"}
+
+
+def _open_mark(r):
+    """Marked Open and not private: the only thing that counts as Open (unmarked is private)."""
+    return r.get("locked") is False and not r.get("private")
+
+
+def may_show(rec, proj):
+    """The one gate for words while Locked mode is off (Lean: BranchOrganizerDay/Visible.lean `mayShow`; the service's `visible_now`, the
+    day and the phone's notices all call this). `proj` is the record of the list `rec` is in, or None when it is in none (or the list is not
+    in the book). A task, routine, thing to buy or decision: itself and its list marked Open and not private. A list and a waiting change:
+    itself marked Open and not private (neither sits in a list). A review (another program's waiting things: a board's name, a manager's name
+    and a count, which that program chose to show even for something private, design__boards_2026-10-04.md section 6) is shown unless it says
+    Locked. Every other kind (resume, timer) is never marked, so it is shown unless it, or its list, says Locked or private. Unmarked is
+    private, for a list too."""
+    kind = rec.get("type")
+    if kind in ("project", "proposal"):
+        return _open_mark(rec)
+    if kind == "review":
+        return not rec.get("locked")
+    if kind in ("task", "routine", "buy", "decision"):
+        return _open_mark(rec) and (proj is None or _open_mark(proj))
+    return not (rec.get("locked") or rec.get("private") or (proj is not None and (proj.get("locked") or proj.get("private"))))
 
 
 def said_back(title, at_text):
@@ -188,6 +217,18 @@ def _one_row_each(day):
     return out
 
 
+def _expand(times, start, stop, keep, cap=ITEMS_MAX, examine_max=EXAMINE_MAX):
+    """The first `cap` times in start..stop (inclusive) that `keep` keeps, out of the first `examine_max` times of the rule, which `times`
+    gives in order from its start. Nothing is built that is not kept, and the rule is not run past the range, the cap or the bound."""
+    out = []
+    for seen, o in enumerate(times, 1):
+        if seen > examine_max or o > stop or len(out) >= cap:
+            break
+        if o >= start and keep(o):
+            out.append(o)
+    return out
+
+
 def entries_between(book, first, last, today, locked_on, local, when, events, lists):
     """(A thing's colour is data its owner keeps and every surface draws as given: a list's colour, a kind's colour the person set (or
     the default above), a calendar event's own calendar colour from Colony, a hex value. Nothing draws a colour of its own.)
@@ -214,17 +255,16 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
     skipped_keys, all_keys, states, skip_rows, revs = set(), set(), {}, [], {}
     for oid, item in book.now.items():
         rec = item["rec"]
-        pj = lists.get(rec.get("project")) or {}
-        shows = not rec.get("aside") and not ((rec.get("locked") is not False or pj.get("locked") or pj.get("private")) and not locked_on)
+        shows = not rec.get("aside") and (locked_on or may_show(rec, lists.get(rec.get("project"))))
         if shows and rec.get("type") == "task" and rec.get("status") == "open" and rec.get("event") and not (rec.get("deferred") or {}).get("until"):
             scheduled.add(rec["event"])       # a task put off no longer stands for its event: Colony's is still where it was
     for oid, item in book.now.items():
         rec = item["rec"]
-        if rec.get("type") != "task" or rec.get("aside") or (rec.get("locked") is not False and not locked_on):
+        if rec.get("type") != "task" or rec.get("aside"):
             continue
-        # a list that is Locked makes its tasks Locked
+        # the one gate (a task and its list each marked Open and not private) unless Locked mode is on
         proj = lists.get(rec.get("project")) or {}
-        if (proj.get("locked") or proj.get("private")) and not locked_on:
+        if not locked_on and not may_show(rec, lists.get(rec.get("project"))):
             continue
         title = rec.get("title") or ""
         look = {"color": proj.get("color") if proj.get("color") else None, "icon": proj.get("icon") if proj.get("icon") else None}
@@ -239,17 +279,18 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         if rec.get("repeat") and rec.get("start"):
             try:
                 rule = rrulestr(rec["repeat"], dtstart=local(rec["start"]))
-                times = rule.between(start, stop, inc=True)
             except (ValueError, TypeError):
-                rule, times = None, []
+                rule = None
             done_until = local(rec.get("done_until")) if rec.get("done_until") else None
             rep_timed = rec.get("start_timed") is True          # an hour given as 00:00 is a time, not a date alone
-            # the times that count (a past time nobody ticked is not claimed either way; the times a put-off holds back wait), then the cap
+            # the times that count (a past time nobody ticked is not claimed either way; the times a put-off holds back wait), then the cap;
+            # chosen as the rule is run, so a very frequent rule is not built whole first
             moved_occ = when(rec) if held else None             # the one occurrence that was put off (the rest are their own instances)
             skipped_for = set(rec.get("skipped_for") or [])
             done_for = set(rec.get("done_for") or [])
-            times = [o for o in times if (done_until and o <= done_until) or shown_(o) in done_for or shown_(o) in skipped_for
-                     or not (o.date() < today or (moved_occ is not None and o == moved_occ))][:ITEMS_MAX]
+            times = _expand(iter(rule) if rule is not None else (), start, stop,
+                            lambda o: (done_until and o <= done_until) or shown_(o) in done_for or shown_(o) in skipped_for
+                            or not (o.date() < today or (moved_occ is not None and o == moved_occ)))
             # each occurrence is its own instance, with its own answer to "was it done?": done only yes, skipped only no, both all, neither
             # none. A time ticked by the older watermark alone counts as done unless it was skipped.
             def instance(o):

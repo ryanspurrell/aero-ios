@@ -125,8 +125,50 @@ final class PhoneOrganizerTests: XCTestCase {
         func call(_ name: String, _ args: [String: JSONValue]) async throws -> JSONValue {
             try await Task.sleep(nanoseconds: 50_000_000)
             if name == "occurrence" { return .object(["at": .string("2026-10-16 09:00")]) }
+            if name == "target" { return PhoneOrganizerTests.target(args) }
             return args["fields"] ?? .null
         }
+    }
+
+    /// The reader's `target` as a stand-in: the current time is 2026-10-16 09:00; a time named is taken as one of the task's own.
+    static func target(_ args: [String: JSONValue]) -> JSONValue {
+        let named = args["occurrence"]?.stringValue ?? ""
+        let current = "2026-10-16 09:00"
+        return .object(["at": .string(named.isEmpty ? current : named), "current": .string(current)])
+    }
+
+    /// A reader that refuses a time the task does not have, as the real one does (the PC's `repeat_target`).
+    final class StrictReader: ReaderRunning {
+        func call(_ name: String, _ args: [String: JSONValue]) async throws -> JSONValue {
+            if name == "target" {
+                if args["occurrence"]?.stringValue == "nonsense" { throw ReaderFailure.said("that is not one of its times") }
+                return PhoneOrganizerTests.target(args)
+            }
+            return args["fields"] ?? .null
+        }
+    }
+
+    /// A Done or a Skip of the current time of a task that was put off keeps one move record (which time, where it had been moved to, when it
+    /// was acted on) and clears the put-off; of another time it keeps none and leaves the put-off. A time the task does not have is refused and
+    /// nothing is written. BranchOrganizerDay/Repeats.lean `done_cur`, `done_other`, `skip_cur`, `done_refused`. Not run when written (no Mac at hand).
+    func testDoneAndSkipOfAPutOffTimeKeepTheMoveAndARefusedTimeWritesNothing() async throws {
+        let phone = try make(StrictReader())
+        let rec: [String: JSONValue] = ["type": .string("task"), "title": .string("Invented: pills"), "status": .string("open"), "repeat": .string("FREQ=DAILY"),
+                                        "locked": .bool(false), "deferred": .object(["until": .string("2026-10-16 15:00"), "times": .number(1), "timed": .bool(true)])]
+        _ = try phone.store.put(oid: "o1", rec: rec, by: PhoneOrganizer.person, why: "added", replaces: nil)
+        do { try await phone.send("complete", ["id": .string("o1"), "occurrence": .string("nonsense")]); XCTFail("a time the task does not have is refused") } catch {}
+        XCTAssertEqual(try phone.store.book().versions["o1"]?.count, 1, "nothing was written")
+        try await phone.send("complete", ["id": .string("o1"), "occurrence": .string("2026-10-17 09:00")])         // another time: no move, still put off
+        var now = try XCTUnwrap(try phone.store.book().now["o1"]?.rec)
+        XCTAssertNil(now["done_moves"])
+        XCTAssertNotNil(now["deferred"])
+        try await phone.send("skip", ["id": .string("o1")])                                                       // the current time
+        now = try XCTUnwrap(try phone.store.book().now["o1"]?.rec)
+        let moves = now["skip_moves"]?.arrayValue ?? []
+        XCTAssertEqual(moves.count, 1)
+        XCTAssertEqual(moves.first?.objectValue?["from"]?.stringValue, "2026-10-16 09:00")
+        XCTAssertEqual(moves.first?.objectValue?["to"]?.stringValue, "2026-10-16 15:00")
+        XCTAssertNil(now["deferred"])
     }
 
     func testTwoOverlappingTapsOnARepeatingTaskAreBothKeptInOneChain() async throws {

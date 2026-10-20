@@ -4,7 +4,7 @@ The simplest model: the phone keeps its records itself (Swift, SQLite); when it 
 Python the PC uses, unchanged: Fingus Core's reader, Organizer's quick-add vocabulary and Organizer's timeline. Nothing here reads or
 writes a file, a network or a database; every call is a pure function of what it is given.
 
-    call(name, json_text) -> json_text      name: "quickadd", "calendar", "upcoming"
+    call(name, json_text) -> json_text      name: "quickadd", "calendar", "upcoming", "occurrence", "target", "clean"
 
 Nothing in this file is a copy of the reader. sync_reader.py puts the real modules beside it at build time.
 """
@@ -38,10 +38,10 @@ class _Book:
 
 
 def _shown(book, rec):
-    """Whether a task's words may be shown on the phone, which is never in Locked mode (the service's visible_now with Locked mode off):
-    only a task marked Open, in a list that is not Locked or private."""
-    proj = book.now[rec["project"]]["rec"] if rec.get("project") in book.now else {}
-    return rec.get("locked") is False and not (proj.get("locked") or proj.get("private"))
+    """Whether a task's words may be shown on the phone, which is never in Locked mode (the service's visible_now with Locked mode off): the
+    one gate, `organizer_timeline.may_show` (BranchOrganizerDay/Visible.lean `mayShow`): the task and its list each marked Open and not
+    private; unmarked is private."""
+    return TL.may_show(rec, book.now[rec["project"]]["rec"] if isinstance(rec.get("project"), str) and rec["project"] in book.now else None)
 
 
 # The fields a record may carry (the service's FIELDS), so nothing else is copied from a reading into a record.
@@ -129,9 +129,16 @@ def calendar(a):
     return TL.calendar_view(book, a.get("span") or "day", day, t, False, R.local, R.when, [], lists, a.get("mode") or TL.DEFAULT_MODE, "", None)
 
 
+def _timed(d):
+    """Whether a put-off carries an hour: what was recorded (`timed`), else whether the time written has one (a date alone does not)."""
+    return d["timed"] if isinstance(d.get("timed"), bool) else len(str(d.get("until") or "").strip()) > 10
+
+
 def upcoming(a):
     """The next times something should be told, nearest first: [{oid, title, fire}] with `fire` 'YYYY-MM-DD HH:MM' (local). Open tasks
-    with a reminder time in the future, and each repeating task's next times; a date with no hour is not a time to be told."""
+    with a reminder time in the future, and each repeating task's next times; a date with no hour is not a time to be told. A task put off
+    is told at its new time, once (BranchOrganizerDay/Spread.lean `singleFires`, `repeatFires`): nothing is told before that time, and a
+    repeat's current time that was moved is not also told at its old time."""
     t = _now(a["now"])
     limit = int(a.get("limit") or 64)
     horizon = t + dt.timedelta(days=int(a.get("days") or 120))
@@ -143,20 +150,29 @@ def upcoming(a):
             continue
         if not _shown(book, rec):
             continue            # the phone is never in Locked mode: a task not marked Open, or in a Locked list, is not told (its title would reach the lock screen)
-        d = (rec.get("deferred") or {}).get("until")
-        hold = R.local(d) if d else None
+        d = rec.get("deferred") or {}
+        hold = R.local(d["until"]) if d.get("until") else None
+        title, told = rec.get("title") or "", set()
+
+        def tell(at):
+            if at not in told:
+                told.add(at)
+                out.append((at, r["oid"], title))
+        if hold and _timed(d) and hold > t:
+            tell(hold)                                     # put off to a time with an hour: told there, whatever else is set
         if rec.get("repeat") and rec.get("start"):
             from dateutil.rrule import rrulestr
             try:
                 rule = rrulestr(rec["repeat"], dtstart=R.local(rec["start"]))
                 done = R.local(rec["done_until"]) if rec.get("done_until") else None
                 handled = set(rec.get("done_for") or []) | set(rec.get("skipped_for") or [])      # a time done or skipped on its own is not told
+                current = R.occurrence(rec) if hold else None                                      # the time a put-off moved
                 n = 0
                 for o in rule.xafter(max(t, done) if done else t, count=limit, inc=False) if hasattr(rule, "xafter") else rule.between(t, horizon, inc=False)[:limit]:
                     if o > horizon or n >= limit:
                         break
-                    if (o.hour or o.minute) and not (hold and o < hold) and R.shown(o) not in handled:
-                        out.append((o, r["oid"], rec.get("title") or ""))
+                    if (o.hour or o.minute) and not (hold and (o < hold or o == current)) and R.shown(o) not in handled:
+                        tell(o)
                         n += 1
             except (ValueError, TypeError):
                 pass
@@ -166,9 +182,24 @@ def upcoming(a):
             continue
         at = R.local(w)
         if at > t and not (hold and at < hold):
-            out.append((at, r["oid"], rec.get("title") or ""))
+            tell(at)
     out.sort(key=lambda x: (x[0], x[1]))
     return [{"oid": o, "title": title, "fire": at.strftime("%Y-%m-%d %H:%M")} for at, o, title in out[:limit]]
+
+
+def target_of(a):
+    """The time a Done or Skip on a repeating task is for: the one the button named, which must be one of the task's own times, else the
+    current one (the service's `repeat_target`, same lines). A time the rule does not have is an error, and nothing is written."""
+    rec, wanted = a["rec"], a.get("occurrence") or ""
+    current = R.occurrence(rec)
+    if not wanted:
+        return {"at": R.shown(current), "current": R.shown(current)}
+    o = R.local(wanted)
+    start = R.local(rec.get("start"))
+    from dateutil.rrule import rrulestr
+    if o is None or start is None or not rrulestr(rec["repeat"], dtstart=start).between(o, o, inc=True):
+        raise ValueError("that is not one of its times")
+    return {"at": R.shown(o), "current": R.shown(current)}
 
 
 def loaded(_a):
@@ -183,7 +214,8 @@ def loaded(_a):
                   and "site-packages" not in m.__file__ and "app_packages" not in m.__file__)
 
 
-CALLS = {"loaded": loaded,"quickadd": quickadd, "calendar": calendar, "upcoming": upcoming, "clean": clean, "occurrence": occurrence_of}
+CALLS = {"loaded": loaded,"quickadd": quickadd, "calendar": calendar, "upcoming": upcoming, "clean": clean, "occurrence": occurrence_of,
+         "target": target_of}
 
 
 def call(name, text):
