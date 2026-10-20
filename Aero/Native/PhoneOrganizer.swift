@@ -227,7 +227,7 @@ final class PhoneOrganizer: OrganizerBackend {
         // each step that can stop is named, so the screen can say which one it was
         let book: OrganizerBook
         do { book = try store.book() } catch { throw QuickAddStopped(step: .keeping) }
-        let lists: [JSONValue] = book.now.filter { $0.value.type == "project" && ["active", "parked"].contains($0.value.status) }
+        let lists: [JSONValue] = book.now.filter { $0.value.type == "project" && ["active", "parked"].contains($0.value.status) && Self.mayShow($0.value, in: book) }
             .map { .object(["id": .string($0.key), "title": .string($0.value.title)]) }
         let got: JSONValue
         do { got = try await reader.call("quickadd", ["text": .string(line), "now": .string(nowText()), "lists": .array(lists)]) }
@@ -237,7 +237,7 @@ final class PhoneOrganizer: OrganizerBackend {
         for var rec in [first] + (object["more"]?.arrayValue?.compactMap { $0.objectValue } ?? []) {
             // a thing to buy already on the list is said, not added twice (the PC's rule)
             if rec["type"]?.stringValue == "buy", let t = rec["title"]?.stringValue?.lowercased(),
-               book.now.values.contains(where: { $0.type == "buy" && $0.status == "open" && $0.title.lowercased() == t }) { continue }
+               book.now.values.contains(where: { $0.type == "buy" && $0.status == "open" && $0.title.lowercased() == t && Self.mayShow($0, in: book) }) { continue }
             rec["changed"] = .string(shown(clock()))
             rec["basis"] = .object(["status": .string("said"), "by": .string(Self.person)])
             rec["locked"] = .bool(false)             // Open: the phone has no Locked mode yet, and the day shows only what is marked Open
@@ -252,6 +252,17 @@ final class PhoneOrganizer: OrganizerBackend {
         let question = Self.question(oid: oid, rec: rec)
         return QuickAddOutcome(title: rec["title"]?.stringValue ?? line, typed: line, question: question, likeliest: Self.likeliest(rec),
                                saved: made.map { String($0.0.prefix(8)) }, when: question == nil ? Self.whenOf(rec) : nil)
+    }
+
+    /// Whether the phone may show or hand on a record's words: marked Open itself, not private, and not in a list that is Locked or private
+    /// (the PC's `is_locked` with `locked == false`; unmarked is private). The phone has no Locked mode, so this is the one gate every
+    /// reader of the book goes through: the lists, quick add's list names, and the check for a thing already to buy.
+    static func mayShow(_ v: RecordVersion, in book: OrganizerBook) -> Bool {
+        guard v.rec["locked"]?.boolValue == false, v.rec["private"]?.boolValue != true else { return false }
+        if let p = v.rec["project"]?.stringValue, let list = book.now[p] {
+            return list.rec["locked"]?.boolValue == false && list.rec["private"]?.boolValue != true
+        }
+        return true
     }
 
     /// The time a record was set for, as it keeps it: due, else remind, else start; nil when it has none.

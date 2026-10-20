@@ -25,7 +25,7 @@ struct ListGroup: Identifiable, Hashable {
 enum PhoneLists {
     static func groups(book: OrganizerBook, now: Date = Date(), calendar: Calendar = .current) -> [ListGroup] {
         func isOpenThing(_ v: RecordVersion) -> Bool {
-            ["task", "buy"].contains(v.type) && v.status == "open" && v.rec["aside"] == nil && v.rec["locked"]?.boolValue == false
+            ["task", "buy"].contains(v.type) && v.status == "open" && v.rec["aside"] == nil && PhoneOrganizer.mayShow(v, in: book)      // an Open task in a Locked list is not shown either
         }
         func item(_ oid: String, _ v: RecordVersion) -> ListItem {
             let kept = PhoneOrganizer.whenOf(v.rec)
@@ -44,7 +44,7 @@ enum PhoneLists {
         }
         let open = book.now.filter { isOpenThing($0.value) }
         var out: [ListGroup] = []
-        let lists = book.now.filter { $0.value.type == "project" && ["active", "parked"].contains($0.value.status) && $0.value.rec["locked"]?.boolValue == false }
+        let lists = book.now.filter { $0.value.type == "project" && ["active", "parked"].contains($0.value.status) && PhoneOrganizer.mayShow($0.value, in: book) }
             .sorted { $0.value.title.lowercased() < $1.value.title.lowercased() }
         var placed = Set<String>()
         for (oid, list) in lists {
