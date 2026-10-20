@@ -176,7 +176,7 @@ final class PhoneOrganizer: OrganizerBackend {
         let rev = args["rev"]?.stringValue ?? ""
         var out: [String: JSONValue] = [
             "item": .string("organizer.tasks/" + String(oid.prefix(8))), "asks": .string("done"), "occ": .string(occ), "who": .string(Self.person),
-            "moment": .number(Double(Presentation.nextMoment())), "saw": .string(rev),
+            "moment": .null, "saw": .string(rev),
             "unseen": .bool(!rev.isEmpty && !currentRev.hasPrefix(rev)),
             "device": .string(pres["device"]?.stringValue ?? ""), "writer": .string(Presentation.writer),
             "client": .string(pres["app"]?.stringValue ?? ""), "chosen": .bool(pres["chosen"]?.boolValue ?? false)]

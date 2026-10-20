@@ -75,20 +75,68 @@ final class PhoneStore {
 
     func book() throws -> OrganizerBook { OrganizerBook(try versions()) }
 
-    /// A new version of `oid` (a new record when `replaces` is nil), made here and now by this installation.
+    /// A new version of `oid` (a new record when `replaces` is nil), made here and now by this installation. A tap in it that has no moment
+    /// (`"moment": null`) takes the next one in its person's own sequence in this same locked step as the write, from the highest the kept
+    /// records hold (organizer_service.py `assign_moments`): a number and the record that holds it are one fact, so a write that fails
+    /// leaves no gap and no repeat.
     @discardableResult
     func put(oid: String, rec: [String: JSONValue], by: String, why: String, replaces: String?) throws -> RecordVersion {
+        lock.lock(); defer { lock.unlock() }
+        var rec = rec
+        try assignMoments(&rec, by: by)
         let v = RecordVersion(id: Self.newID(), at: Self.stamp(clock()), kind: "org", oid: oid, rec: rec, by: by, why: why, replaces: replaces, key: nil, install: installID)
-        try add(v)
+        try addLocked(v)
         return v
     }
 
     /// A version made elsewhere (a PC's, later): kept as it came, with its own id and `install`. A version already held is not added twice.
     func add(_ v: RecordVersion) throws {
         lock.lock(); defer { lock.unlock() }
+        try addLocked(v)
+    }
+
+    private func addLocked(_ v: RecordVersion) throws {
         let json = String(data: try JSONEncoder().encode(v.rec), encoding: .utf8) ?? "{}"
         try run("INSERT OR IGNORE INTO versions(id, at, oid, install, by, why, replaces, key, rec) VALUES (?,?,?,?,?,?,?,?,?)",
                 [v.id, v.at, v.oid, v.install, v.by, v.why, v.replaces, v.key, json])
+    }
+
+    private static let tapKeys = ["done_ats", "skipped_ats"]
+
+    private static func who(_ w: String) -> String { w.hasPrefix("person:") || w.hasPrefix("device:") ? "anchor" : w }
+
+    private static func moment(_ v: JSONValue?) -> Int? { if case .number(let n)? = v { return Int(n) } else { return nil } }
+
+    /// Fills each tap's missing moment. Caller holds `lock`.
+    private func assignMoments(_ rec: inout [String: JSONValue], by: String) throws {
+        let needs = Self.tapKeys.contains { k in (rec[k]?.arrayValue ?? []).contains { $0.objectValue?["moment"] == JSONValue.null } }
+        guard needs else { return }
+        var top: [String: Int] = [:]
+        func note(_ r: [String: JSONValue]) {
+            for k in Self.tapKeys {
+                for x in r[k]?.arrayValue ?? [] {
+                    guard let o = x.objectValue, let m = Self.moment(o["moment"]) else { continue }
+                    let w = Self.who(o["who"]?.stringValue ?? "")
+                    top[w] = max(top[w] ?? 0, m)
+                }
+            }
+        }
+        for r in try rows("SELECT rec FROM versions") {
+            if let text = r[0], let data = text.data(using: .utf8), let kept = try? JSONDecoder().decode([String: JSONValue].self, from: data) { note(kept) }
+        }
+        note(rec)
+        for k in Self.tapKeys {
+            guard var taps = rec[k]?.arrayValue else { continue }
+            for i in taps.indices {
+                guard var o = taps[i].objectValue, o["moment"] == JSONValue.null else { continue }
+                let w = Self.who(o["who"]?.stringValue ?? by)
+                let n = (top[w] ?? 0) + 1
+                top[w] = n
+                o["moment"] = .number(Double(n))
+                taps[i] = .object(o)
+            }
+            rec[k] = .array(taps)
+        }
     }
 
     // MARK: SQLite, minimal

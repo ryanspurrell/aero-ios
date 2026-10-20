@@ -179,4 +179,23 @@ final class DayRequirementsTests: XCTestCase {
         let blob = String(data: try JSONEncoder().encode(taps), encoding: .utf8) ?? ""
         XCTAssertFalse(blob.contains("secret") || blob.contains("Chen"), "the tap record holds the pointer, never the title")
     }
+
+    /// Not run when written. A moment is taken in the same step as the record write: a Done that fails takes none, so the next one is not
+    /// numbered past a gap, and moments in a person's sequence run 1, 2, 3 across different tasks.
+    @MainActor
+    func testMomentsAreTakenWithTheWriteAndLeaveNoGap() async throws {
+        let phone = PhoneOrganizer(store: try PhoneStore(), reader: CannedQuickAddReader(), clock: { Date() })
+        try await phone.send("add", ["title": .string("First")])
+        try await phone.send("add", ["title": .string("Second")])
+        let ids = Array(try phone.store.book().now.keys)
+        try await phone.send("complete", ["id": .string(ids[0]), "presented": Presentation.presented(Presentation.nextCard, pointer: "done")])
+        do { try await phone.send("complete", ["id": .string("no-such-item")]); XCTFail("an unknown item is refused") } catch {}
+        try await phone.send("skip", ["id": .string(ids[1]), "presented": Presentation.presented(Presentation.nextCard, pointer: "skip")])
+        let book = try phone.store.book()
+        func moment(_ id: String, _ key: String) -> Int? {
+            if case .number(let n)? = book.now[id]?.rec[key]?.arrayValue?.first?.objectValue?["moment"] { return Int(n) } else { return nil }
+        }
+        XCTAssertEqual(moment(ids[0], "done_ats"), 1)
+        XCTAssertEqual(moment(ids[1], "skipped_ats"), 2, "no gap, and one sequence for her across tasks and across Done and Skip")
+    }
 }

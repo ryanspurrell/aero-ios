@@ -106,11 +106,11 @@ def day_words(day, today):
 
 
 def _entry(source, kind, key, title, date, time="", end="", all_day=False, state="open", done_at="", since="", color=None, icon=None,
-           repeat=False, ref=None, question=None, mark="", mark_text="", moved_to=None, done_state=None, occurrence=""):
+           repeat=False, ref=None, question=None, mark="", mark_text="", moved_to=None, done_state=None, occurrence="", since_time=""):
     c, i = _LOOKS[0][kind]
     return {"source": source, "type": kind, "id": key, "title": title, "date": date.isoformat(), "time": time, "time_text": clock_text(time),
             "end": end, "end_text": clock_text(end), "all_day": all_day, "state": state, "done_at": done_at, "done_at_text": clock_text(done_at),
-            "since": since, "color": color or c, "icon": icon or i, "repeat": repeat, "open": ref or {"app": "organizer", "id": key},
+            "since": since, "since_time": since_time, "color": color or c, "icon": icon or i, "repeat": repeat, "open": ref or {"app": "organizer", "id": key},
             "question": question, "mark": mark, "mark_text": mark_text, "moved_to": moved_to,
             "occurrence": occurrence,            # which instance of a repeat the row is for ("YYYY-MM-DD HH:MM"), so Done and Skip act on it
             # was it done? four values from the records (Aryn, 2026-10-19, "every button is one of the four values"): "yes" a done is
@@ -324,7 +324,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                     put(_entry("organizer", kind, key, title, held.date(), _hm(held) if new_timed else "", repeat=True, question=q,
                                mark="moved_from", mark_text=moved_from, occurrence=shown_(w) if w else "", **look))
                 if held.date() < today and first <= today <= last:
-                    put(_entry("organizer", kind, key, title, today, state="unmarked", since=held.date().isoformat(), repeat=True, question=q,
+                    put(_entry("organizer", kind, key, title, today, state="unmarked", since=held.date().isoformat(), since_time=_hm(held) if d.get("timed", True) else "", repeat=True, question=q,
                                mark="moved_from", mark_text=moved_from, occurrence=shown_(w) if w else "", **look))
                 if w is not None and w.date() != held.date() and first <= w.date() <= last:
                     where = day_words(held.date(), today) + (" " + clock_text(_hm(held)) if new_timed else "")
@@ -394,7 +394,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                            mark_text=moved_from, **look))
             if nd < today and first <= today <= last:
                 # the new day has passed and it is still open: behind, from where it was moved to (not from where it was first due)
-                put(_entry("organizer", kind, key, title, today, state="unmarked", since=nd.isoformat(), mark="moved_from", mark_text=moved_from,
+                put(_entry("organizer", kind, key, title, today, state="unmarked", since=nd.isoformat(), since_time=_hm(until) if new_timed else "", mark="moved_from", mark_text=moved_from,
                            question=q, **look))
             if w is not None and w.date() != nd and first <= w.date() <= last:
                 where = day_words(nd, today) + (" " + clock_text(_hm(until)) if new_timed else "")
@@ -429,7 +429,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         if first <= w.date() <= last:
             put(_entry("organizer", kind, key, title, w.date(), _hm(w) if timed else "", question=q, **look))
         elif w.date() < today and first <= today <= last:
-            put(_entry("organizer", kind, key, title, today, state="unmarked", since=w.date().isoformat(), question=q, **look))
+            put(_entry("organizer", kind, key, title, today, state="unmarked", since=w.date().isoformat(), since_time=_hm(w) if timed else "", question=q, **look))
     for ev in events or []:
         ref = {"app": "colony", "id": ev.get("id") or "", "occurrence": ev.get("occurrence") or ""}
         if ev.get("id") in scheduled:
@@ -492,14 +492,61 @@ def greeting(hour):
     return "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
 
 
-def _unmarked(e, day, today, is_today, now_hm):
+# The due spread (Aryn, 2026-10-17, projects/foundations/rebuild__bottom_up_organizer.md "The spread, her own numbers"): "if i have something
+# at 2, i usually dont consider 2 the exact due time. usually 10 to 15 minutes around it can be fine". Around a task's time, early and late,
+# "due" and "not due" are both true (the four values' "all"); before it "no", after it "yes". The width is her stated range: 10 minutes each
+# side is the lower end of "10 to 15" (which end is picked, not grounded); a stricter task having a narrower spread is her answer too, but
+# no per-task strictness is stored yet, so every task has this one width (not built).
+SPREAD_MINUTES = 10
+
+
+def _minutes(hm):
+    return int(hm[:2]) * 60 + int(hm[3:5])
+
+
+def due_region(time_hm, now_hm, spread=SPREAD_MINUTES):
+    """"no" before the spread, "all" inside it (both due and not due), "yes" after it, for a time and the clock (both 'HH:MM')."""
+    d, n = _minutes(time_hm), _minutes(now_hm)
+    return "no" if n < d - spread else "yes" if n > d + spread else "all"
+
+
+def due_region_at(day, time_hm, t, spread=SPREAD_MINUTES):
+    """The same for a time on a given day, so the spread crosses midnight: 23:59 yesterday is still inside it at 00:05."""
+    if not time_hm:
+        return "yes" if day < t.date() else "no" if day > t.date() else "all"
+    mins = (t.replace(second=0, microsecond=0) - dt.datetime.combine(day, dt.time(int(time_hm[:2]), int(time_hm[3:5])), t.tzinfo)).total_seconds() / 60
+    return "no" if mins < -spread else "yes" if mins > spread else "all"
+
+
+def _carried(e, t):
+    """A task from just before midnight, kept on today as 'from before', whose spread has not ended: it is still both due and not due."""
+    if e["source"] != "organizer" or e["state"] != "unmarked" or not e.get("since") or not e.get("since_time") \
+            or e.get("done_state", "none") != "none":
+        return False
+    try:
+        return due_region_at(dt.date.fromisoformat(e["since"]), e["since_time"], t) != "yes"
+    except ValueError:
+        return False
+
+
+def _unmarked(e, day, t):
     """No record of completion is none, not "late" (Aryn, 2026-10-17: "I agree with that"): a task's own entry whose day or time has passed with
     nothing recorded reads as not marked done; Organizer has no record of a skipped time, so nothing is claimed as not done (the smallest way
     to say so would be a `skipped_ats` beside `done_ats`, set by a Skip action: proposed, not built). It stays visible. A Colony event is not
-    a task and is not asked this."""
+    a task and is not asked this. Past means past the spread (a time and the clock, across midnight too), not the exact minute."""
     if e["source"] != "organizer" or e["state"] not in ("open", "unmarked") or e.get("done_state", "none") != "none":
         return False
-    return e["state"] == "unmarked" or day < today or bool(is_today and e["time"] and e["time"] <= now_hm)
+    if e["state"] == "unmarked":
+        return not _carried(e, t)
+    return bool(day < t.date() and not e["time"]) or bool(e["time"] and due_region_at(day, e["time"], t) == "yes")
+
+
+def _ahead(e, day, t, now_hm):
+    """Whether a row is still to come for the Now line, Next and Free until. An open task's time is a spread: it is still to come until the
+    spread has ended (so inside it, it is both here and to come). Anything else (a Colony event, a done thing) is a point."""
+    if e["state"] == "open" and e["source"] == "organizer":
+        return due_region_at(day, e["time"], t) != "yes"
+    return e["time"] > now_hm
 
 
 def day_view(entries, day, t):
@@ -514,18 +561,40 @@ def day_view(entries, day, t):
     rows, nxt, tied = [], None, []
     placed = False
     tie = None                                   # the time of the next one: everything at that time is next together, none before another
+    anyrows = []
+    for e in anytime:
+        # from before midnight and still inside its spread: both due and not due, so it is next (the earliest), not "not marked done" yet
+        if is_today and _carried(e, t):
+            row = dict(e, kind="item", unmarked=False, due="all", until="around now", until_words="around now")
+            key = ("before", e["since_time"])
+            if nxt is None:
+                nxt, tie = row, key
+            elif key == tie:
+                tied.append(row)
+            anyrows.append(row)
+        else:
+            anyrows.append(dict(e, kind="item", unmarked=_unmarked(e, day, t)))
+    carried_next = nxt is not None
     for e in timed:
-        if is_today and not placed and e["time"] > now_hm:
+        ahead = _ahead(e, day, t, now_hm)
+        if is_today and not placed and ahead:
             rows.append({"kind": "now", "time": now_hm, "time_text": clock_text(now_hm)})
-            later_open = [x for x in timed if x["time"] > now_hm and x["state"] not in ("done",) + QUIET]
+            later_open = [x for x in timed if _ahead(x, day, t, now_hm) and x["state"] not in ("done",) + QUIET]
             if later_open:
-                rows.append({"kind": "free", "text": "Free until " + later_open[0]["time_text"]})
+                first_open = later_open[0]
+                rows.append({"kind": "free", "text": ("Free until " if first_open["time"] > now_hm else "Something at ") + first_open["time_text"]
+                             + ("" if first_open["time"] > now_hm else ", around now")})
             placed = True
-        row = dict(e, kind="item", unmarked=_unmarked(e, day, today, is_today, now_hm))
-        if is_today and e["state"] == "open" and e["time"] > now_hm and (nxt is None or e["time"] == tie):
-            mins = (dt.datetime.combine(day, dt.time(int(e["time"][:2]), int(e["time"][3:])), t.tzinfo) - t).total_seconds() / 60
-            row["until"] = "in " + span_text(mins)
-            row["until_words"] = "in " + span_words(mins)
+        organizer_open = e["state"] == "open" and e["source"] == "organizer"
+        row = dict(e, kind="item", unmarked=_unmarked(e, day, t),
+                   due=due_region_at(day, e["time"], t) if organizer_open and day in (today - dt.timedelta(days=1), today) else "")
+        if is_today and e["state"] == "open" and ahead and (nxt is None or (e["time"] == tie and not carried_next)):
+            mins = (dt.datetime.combine(day, dt.time(int(e["time"][:2]), int(e["time"][3:])), t.tzinfo) - t.replace(second=0, microsecond=0)).total_seconds() / 60
+            if mins > 0:
+                row["until"] = "in " + span_text(mins)
+                row["until_words"] = "in " + span_words(mins)
+            else:
+                row["until"] = row["until_words"] = "around now"           # inside its spread, past the minute: due and not yet due
             if nxt is None:
                 nxt, tie = row, e["time"]
             else:
@@ -536,14 +605,14 @@ def day_view(entries, day, t):
         rows.append({"kind": "free", "text": "Nothing more at a set time today" if timed else "Nothing at a set time today"})
     elif not timed and not is_today:
         rows.append({"kind": "free", "text": "Free" if not anytime else "Nothing at a set time"})
-    anyrows = [dict(e, kind="item", unmarked=_unmarked(e, day, today, is_today, now_hm)) for e in anytime]
-    did = [{"id": e["id"], "text": said_back(e["title"], e["done_at_text"])} for e in mine if e["state"] == "done" and e["source"] == "organizer"]
     nexts = ([nxt] + tied) if nxt else []
+    did = [{"id": e["id"], "text": said_back(e["title"], e["done_at_text"])} for e in mine if e["state"] == "done" and e["source"] == "organizer"]
     after = [x for x in rows if x.get("kind") == "item" and x["state"] != "done" and x["state"] not in QUIET and not any(x is n for n in nexts)
              and not x["unmarked"]]
     later = [{"id": x["id"], "title": x["title"], "time_text": x["time_text"], "source": x["source"]} for x in after] \
         + [{"id": x["id"], "title": x["title"], "time_text": "", "source": x["source"]} for x in anyrows
-                                                                                                    if x["state"] != "done" and x["state"] not in QUIET and not x["unmarked"]]
+                                                                                                    if x["state"] != "done" and x["state"] not in QUIET and not x["unmarked"]
+                                                                                                    and not any(x is n for n in nexts)]
     unmarked = [{"id": x["id"], "title": x["title"], "time_text": x["time_text"], "source": x["source"]}
                 for x in rows + anyrows if x.get("kind") == "item" and x.get("unmarked")]
     return {"date": day.isoformat(), "label": day_label(day, today), "date_text": day_date_text(day), "is_today": is_today,

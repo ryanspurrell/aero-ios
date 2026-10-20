@@ -44,12 +44,7 @@ enum Presentation {
     /// A fixed screen: shown with probability 1, and says so.
     static let fixedScreen: [String: JSONValue] = ["prob": .number(1), "chosen": .bool(false)]
 
-    /// The position of a tap in her own sequence (not the clock): 1, 2, 3 ...
-    static func nextMoment(defaults: UserDefaults = .standard) -> Int {
-        let n = defaults.integer(forKey: "organizer.moment") + 1
-        defaults.set(n, forKey: "organizer.moment")
-        return n
-    }
+    // The position of a tap in her own sequence is taken by `PhoneStore.put`, in the same locked step as the write that keeps it.
 
     static var direction: String { UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr" }
 
