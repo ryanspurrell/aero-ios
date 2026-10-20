@@ -92,7 +92,18 @@ final class PhoneOrganizer: OrganizerBackend {
     /// The time fields: setting one of them answers a question that was waiting (the PC's TIME_FIELDS).
     private static let timeFields = ["due", "remind", "repeat", "start", "timing"]
 
+    /// Changes to a record go one at a time: a change reads the record, may wait for the reader (`occurrence`, `clean`), then writes the
+    /// next version. Two taps overlapping would both read the same version and both write a successor to it. They now wait their turn,
+    /// so the second reads the first's result (the store also refuses a write made from a record that has moved on, `changedMeanwhile`).
+    private let turn = Turn()
+
     private func change(_ name: String, _ args: [String: JSONValue]) async throws {
+        await turn.enter()
+        defer { turn.leave() }
+        try await changeNow(name, args)
+    }
+
+    private func changeNow(_ name: String, _ args: [String: JSONValue]) async throws {
         let book = try store.book()
         guard let ref = args["id"]?.stringValue, let oid = book.find(ref), let before = book.now[oid] else { throw Failure.noSuchItem }
         var rec = before.rec
@@ -311,5 +322,24 @@ final class PhoneOrganizer: OrganizerBackend {
             return PhoneReminders.Upcoming(oid: oid, title: o["title"]?.stringValue ?? "", fire: fire)
         }
         await reminders.replace(with: upcoming)
+    }
+}
+
+/// One at a time, in the order they asked: a waiting caller is resumed when the one before it leaves.
+final class Turn {
+    private let lock = NSLock()
+    private var busy = false
+    private var waiting: [CheckedContinuation<Void, Never>] = []
+
+    func enter() async {
+        await withCheckedContinuation { (next: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if busy { waiting.append(next); lock.unlock() } else { busy = true; lock.unlock(); next.resume() }
+        }
+    }
+
+    func leave() {
+        lock.lock()
+        if waiting.isEmpty { busy = false; lock.unlock() } else { let next = waiting.removeFirst(); lock.unlock(); next.resume() }
     }
 }

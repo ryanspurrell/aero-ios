@@ -9,7 +9,7 @@ import SQLite3
 /// mapping from each record's open-ended fields. A version's `rec` is kept as the JSON text it is, so a field a newer install adds
 /// survives a trip through this one.
 final class PhoneStore {
-    enum Failure: Error { case open(String), sql(String) }
+    enum Failure: Error { case open(String), sql(String), changedMeanwhile }
 
     private var db: OpaquePointer?
     private let lock = NSLock()
@@ -82,6 +82,10 @@ final class PhoneStore {
     @discardableResult
     func put(oid: String, rec: [String: JSONValue], by: String, why: String, replaces: String?) throws -> RecordVersion {
         lock.lock(); defer { lock.unlock() }
+        // A version replaces the one that is current. If another version already replaces `replaces`, this write was made from a record that
+        // has moved on; writing it would leave two heads (a fork) and the day would show only one of them, losing a tap. Refused here, in the
+        // one place every writer goes through, so no caller has to remember to check.
+        if let replaces, try !rows("SELECT 1 FROM versions WHERE replaces = ? LIMIT 1", [replaces]).isEmpty { throw Failure.changedMeanwhile }
         var rec = rec
         try assignMoments(&rec, by: by)
         let v = RecordVersion(id: Self.newID(), at: Self.stamp(clock()), kind: "org", oid: oid, rec: rec, by: by, why: why, replaces: replaces, key: nil, install: installID)

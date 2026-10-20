@@ -29,6 +29,17 @@ final class PhoneStoreTests: XCTestCase {
         XCTAssertTrue(book.conflicts.isEmpty)
     }
 
+    func testAWriteMadeFromARecordThatHasMovedOnIsRefusedSoNoForkIsMade() throws {
+        let store = try PhoneStore()
+        let first = try store.put(oid: "o1", rec: ["type": .string("task"), "title": .string("x"), "status": .string("open")], by: "p", why: "added", replaces: nil)
+        try store.put(oid: "o1", rec: ["type": .string("task"), "title": .string("x"), "status": .string("done")], by: "p", why: "done", replaces: first.id)
+        XCTAssertThrowsError(try store.put(oid: "o1", rec: ["type": .string("task"), "title": .string("x"), "status": .string("dropped")], by: "p", why: "dropped", replaces: first.id)) { error in
+            guard case PhoneStore.Failure.changedMeanwhile = error else { return XCTFail("\(error)") }
+        }
+        XCTAssertEqual(try store.versions().count, 2)
+        XCTAssertTrue(try store.book().conflicts.isEmpty)
+    }
+
     func testNothingIsOverwrittenAndUnknownFieldsSurvive() throws {
         let store = try PhoneStore()
         try store.put(oid: "o1", rec: ["type": .string("task"), "title": .string("x"), "a_field_added_later": .object(["n": .number(1)])], by: "p", why: "added", replaces: nil)
@@ -107,6 +118,31 @@ final class PhoneOrganizerTests: XCTestCase {
         XCTAssertNil(PhoneOrganizer.likeliest(equal), "equal shares: nothing is called likeliest")
         rd["state"] = .string("answered"); equal["readings"] = .object(rd)
         XCTAssertNil(PhoneOrganizer.question(oid: "x", rec: equal), "an answered question is not asked again")
+    }
+
+    /// A reader that waits before it answers, as the embedded one does, so two taps started together overlap.
+    final class SlowReader: ReaderRunning {
+        func call(_ name: String, _ args: [String: JSONValue]) async throws -> JSONValue {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if name == "occurrence" { return .object(["at": .string("2026-10-16 09:00")]) }
+            return args["fields"] ?? .null
+        }
+    }
+
+    func testTwoOverlappingTapsOnARepeatingTaskAreBothKeptInOneChain() async throws {
+        let phone = try make(SlowReader())
+        let made = try phone.store.put(oid: "o1", rec: ["type": .string("task"), "title": .string("Invented: pills"), "status": .string("open"), "repeat": .string("daily at 9")], by: PhoneOrganizer.person, why: "added", replaces: nil)
+        _ = made
+        async let a: Void = phone.send("skip", ["id": .string("o1"), "occurrence": .string("2026-10-16 09:00")])
+        async let b: Void = phone.send("skip", ["id": .string("o1"), "occurrence": .string("2026-10-17 09:00")])
+        _ = try await (a, b)
+        let book = try phone.store.book()
+        XCTAssertTrue(book.conflicts.isEmpty, "one chain, no fork")
+        XCTAssertEqual(book.versions["o1"]?.count, 3)
+        let taps = book.now["o1"]?.rec["skipped_ats"]?.arrayValue ?? []
+        XCTAssertEqual(taps.count, 2, "neither tap was lost")
+        let moments: [Double] = taps.compactMap { if case .number(let n)? = $0.objectValue?["moment"] { return n } else { return nil } }
+        XCTAssertEqual(moments.sorted(), [1, 2])
     }
 
     func testACertainLineBecomesARecordMadeHereAndAskedNothing() async throws {
