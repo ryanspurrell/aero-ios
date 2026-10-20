@@ -90,8 +90,9 @@ final class OrganizerDayStore: ObservableObject {
         do { try await api.apply(choice.answer); return true } catch { failure = error.localizedDescription; return false }
     }
 
-    func setDone(_ id: String, done: Bool, occurrence: String? = nil, presented: JSONValue? = nil) async -> Bool {
+    func setDone(_ id: String, done: Bool, occurrence: String? = nil, presented: JSONValue? = nil, rev: String? = nil) async -> Bool {
         var args: [String: JSONValue] = ["id": .string(id)]
+        if done, let rev, !rev.isEmpty { args["rev"] = .string(rev) }
         if done, let occurrence, !occurrence.isEmpty { args["occurrence"] = .string(occurrence) }
         if done, let presented { args["presented"] = presented }
         do { try await api.send(done ? "complete" : "reopen", args); return true }
@@ -99,8 +100,9 @@ final class OrganizerDayStore: ObservableObject {
     }
 
     /// Skip: records that she skipped it, dated; nothing is deleted and it can be done after (both are then kept and shown as both).
-    func skip(_ id: String, occurrence: String? = nil, presented: JSONValue? = nil) async -> Bool {
+    func skip(_ id: String, occurrence: String? = nil, presented: JSONValue? = nil, rev: String? = nil) async -> Bool {
         var args: [String: JSONValue] = ["id": .string(id)]
+        if let rev, !rev.isEmpty { args["rev"] = .string(rev) }
         if let occurrence, !occurrence.isEmpty { args["occurrence"] = .string(occurrence) }
         if let presented { args["presented"] = presented }
         do { try await api.send("skip", args); return true }

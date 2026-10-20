@@ -279,7 +279,7 @@ struct SimpleDayView: View {
             HStack(spacing: 10) {
                 Button {
                     if n.source == "colony" { open(n.open); return }
-                    Task { if await store.setDone(n.open.id, done: !done, occurrence: n.occurrence, presented: Presentation.presented(Presentation.nextCard, pointer: "done")) { done.toggle() } }
+                    Task { if await store.setDone(n.open.id, done: !done, occurrence: n.occurrence, presented: Presentation.presented(Presentation.nextCard, pointer: "done"), rev: n.rev) { done.toggle() } }
                 } label: {
                     // recorded where it was pressed, and taken back there
                     Text(n.source == "colony" ? "Open" : done ? "Done. Tap to undo" : n.button).fx(Look.Size.nextName, style: .title2)
@@ -292,7 +292,7 @@ struct SimpleDayView: View {
                 if n.source != "colony" {
                     // Skip, quiet beside Done: it records that she skipped it, dated; nothing is deleted
                     Button {
-                        Task { if await store.skip(n.open.id, occurrence: n.occurrence, presented: Presentation.presented(Presentation.nextCard, pointer: "skip")) { skipped = true } }
+                        Task { if await store.skip(n.open.id, occurrence: n.occurrence, presented: Presentation.presented(Presentation.nextCard, pointer: "skip"), rev: n.rev) { skipped = true } }
                     } label: {
                         Text(skipped ? "Skipped" : "Skip").fx(Look.Size.nextMeta, style: .headline)
                             .foregroundStyle(Look.Palette.ink).opacity(0.75)

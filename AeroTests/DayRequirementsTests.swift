@@ -158,4 +158,25 @@ final class DayRequirementsTests: XCTestCase {
         XCTAssertEqual(Presentation.observation(at: "2026-10-19 10:00", presented: nil).stringValue, "2026-10-19 10:00", "a plain time stays plain")
         XCTAssertEqual(Presentation.obsTime(entry), "2026-10-19 10:00")
     }
+
+    /// Not run when written. A tap records the item's pointer, the moment in her sequence, what she saw, the device and the version; never the title.
+    @MainActor
+    func testATapRecordsItsPointerAndMomentAndNeverTheTitle() async throws {
+        let phone = PhoneOrganizer(store: try PhoneStore(), reader: CannedQuickAddReader(), clock: { Date() })
+        try await phone.send("add", ["title": .string("Pay Dr Chen the secret bill")])
+        let id = try phone.store.book().now.keys.first!
+        try await phone.send("complete", ["id": .string(id), "rev": .string("stale0000000"),
+                                          "presented": Presentation.presented(Presentation.nextCard, pointer: "done")])
+        try await phone.send("reopen", ["id": .string(id)])
+        try await phone.send("complete", ["id": .string(id), "presented": Presentation.presented(Presentation.nextCard, pointer: "done")])
+        let rec = try phone.store.book().now[id]!.rec
+        let taps = (rec["done_ats"]?.arrayValue ?? []).compactMap { $0.objectValue }
+        XCTAssertEqual(taps.count, 2, "every tap is kept, on one day too")
+        XCTAssertEqual(taps[0]["item"]?.stringValue, "organizer.tasks/" + String(id.prefix(8)))
+        XCTAssertEqual(taps[0]["unseen"]?.boolValue, true, "an answer that did not see the latest is kept, and says so")
+        XCTAssertLessThan(taps[0]["moment"].flatMap { if case .number(let n) = $0 { return n } else { return nil } } ?? 0,
+                          taps[1]["moment"].flatMap { if case .number(let n) = $0 { return n } else { return nil } } ?? 0)
+        let blob = String(data: try JSONEncoder().encode(taps), encoding: .utf8) ?? ""
+        XCTAssertFalse(blob.contains("secret") || blob.contains("Chen"), "the tap record holds the pointer, never the title")
+    }
 }

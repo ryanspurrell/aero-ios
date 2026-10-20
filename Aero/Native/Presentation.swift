@@ -11,6 +11,8 @@ struct PointerSpec: Codable, Hashable {
     var kind: String = "button"
     var size: String
     var style: String
+    /// What tapping it says about the question ("yes", "no"), so the value is read from the pointer.
+    var states: String = ""
     var position: Int
     var order: Int
     var main: Bool
@@ -33,8 +35,21 @@ struct Layout: Codable, Hashable {
 enum Presentation {
     /// The Next card of the simple view: a large Done (the main one) and a quiet Skip.
     static let nextCard = Layout(surface: "ios.next", pointers: [
-        PointerSpec(id: "done", size: "large", style: "ink", position: 0, order: 0, main: true),
-        PointerSpec(id: "skip", size: "quiet", style: "quiet", position: 1, order: 1, main: false)])
+        PointerSpec(id: "done", size: "large", style: "ink", states: "yes", position: 0, order: 0, main: true),
+        PointerSpec(id: "skip", size: "quiet", style: "quiet", states: "no", position: 1, order: 1, main: false)])
+
+    /// The version of the program writing the record (so what a faulty version wrote can be found).
+    static var writer: String { "aero-ios/" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev") }
+
+    /// A fixed screen: shown with probability 1, and says so.
+    static let fixedScreen: [String: JSONValue] = ["prob": .number(1), "chosen": .bool(false)]
+
+    /// The position of a tap in her own sequence (not the clock): 1, 2, 3 ...
+    static func nextMoment(defaults: UserDefaults = .standard) -> Int {
+        let n = defaults.integer(forKey: "organizer.moment") + 1
+        defaults.set(n, forKey: "organizer.moment")
+        return n
+    }
 
     static var direction: String { UIApplication.shared.userInterfaceLayoutDirection == .rightToLeft ? "rtl" : "ltr" }
 
@@ -42,7 +57,10 @@ enum Presentation {
     static func presented(_ layout: Layout, pointer: String) -> JSONValue {
         let e = JSONEncoder()
         let lay = (try? JSONDecoder().decode(JSONValue.self, from: e.encode(layout))) ?? .null
-        return .object(["surface": .string(layout.surface), "pointer": .string(pointer), "direction": .string(direction), "layout": lay])
+        var o: [String: JSONValue] = ["surface": .string(layout.surface), "pointer": .string(pointer), "direction": .string(direction), "layout": lay,
+                                      "app": .string(writer), "device": .string(UIDevice.current.identifierForVendor.map { String($0.uuidString.prefix(8)).lowercased() } ?? "")]
+        o.merge(fixedScreen) { $1 }
+        return .object(o)
     }
 
     /// The layouts kept so far, by id (the phone's own place for them).
@@ -56,13 +74,19 @@ enum Presentation {
     static func obsTime(_ v: JSONValue) -> String? { v.stringValue ?? v.objectValue?["at"]?.stringValue }
 
     /// The entry for done_ats / skipped_ats: a record when a presentation came with the action, else the plain time.
-    static func observation(at: String, presented: JSONValue?) -> JSONValue {
+    static func observation(at: String, presented: JSONValue?, tap: [String: JSONValue]? = nil) -> JSONValue {
         guard let p = presented?.objectValue, let raw = p["layout"],
-              let data = try? JSONEncoder().encode(raw), let lay = try? JSONDecoder().decode(Layout.self, from: data) else { return .string(at) }
+              let data = try? JSONEncoder().encode(raw), let lay = try? JSONDecoder().decode(Layout.self, from: data) else {
+            guard var t = tap else { return .string(at) }
+            t["at"] = .string(at); t["layout"] = .string(""); t["pointer"] = .string(""); t["surface"] = .string(""); t["direction"] = .string("")
+            return .object(t)
+        }
         let pointer = p["pointer"]?.stringValue ?? ""
         let dir = p["direction"]?.stringValue ?? ""
-        return .object(["at": .string(at), "layout": .string(keep(lay)),
-                        "pointer": .string(lay.pointers.contains { $0.id == pointer } ? pointer : ""),
-                        "surface": .string(lay.surface), "direction": .string(["ltr", "rtl"].contains(dir) ? dir : "")])
+        var o: [String: JSONValue] = tap ?? [:]
+        o["at"] = .string(at); o["layout"] = .string(keep(lay))
+        o["pointer"] = .string(lay.pointers.contains { $0.id == pointer } ? pointer : "")
+        o["surface"] = .string(lay.surface); o["direction"] = .string(["ltr", "rtl"].contains(dir) ? dir : "")
+        return .object(o)
     }
 }

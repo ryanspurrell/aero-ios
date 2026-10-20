@@ -211,7 +211,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
     start = dt.datetime.combine(first, dt.time(), local("2000-01-01").tzinfo)
     stop = dt.datetime.combine(last, dt.time(23, 59, 59), start.tzinfo)
     scheduled = set()
-    skipped_keys, all_keys, states, skip_rows = set(), set(), {}, []
+    skipped_keys, all_keys, states, skip_rows, revs = set(), set(), {}, [], {}
     for oid, item in book.now.items():
         rec = item["rec"]
         pj = lists.get(rec.get("project")) or {}
@@ -235,6 +235,7 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         kind = "buy" if rec.get("type") == "buy" else "repeat" if rec.get("repeat") else "task"
         q = question_of(oid, rec)
         key = oid[:8]
+        revs[key] = str(item.get("id") or "")[:12]                              # the record a row was drawn from: a Done or Skip names it (`rev`), so a late one is kept
         if rec.get("repeat") and rec.get("start"):
             try:
                 rule = rrulestr(rec["repeat"], dtstart=local(rec["start"]))
@@ -451,6 +452,8 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                        all_day=all_day or not timed, ref=ref, color=ev.get("colour") or None))
             day += dt.timedelta(days=1)
     for e in order:
+        if e["source"] == "organizer":
+            e["rev"] = revs.get(e["id"], "")
         if e["source"] == "organizer" and not e["repeat"] and e["id"] in states:
             e["done_state"] = states[e["id"]]                    # one answer for the task on every row of it, for every surface to read
             if e["id"] in skipped_keys and e["state"] in ("open", "unmarked"):
@@ -547,13 +550,13 @@ def day_view(entries, day, t):
             "prev": (day - dt.timedelta(days=1)).isoformat(), "next": (day + dt.timedelta(days=1)).isoformat(),
             "now": {"time": now_hm, "time_text": clock_text(now_hm)}, "rows": rows, "anytime": anyrows,
             "simple": {"greeting": greeting(t.hour), "clock": "It's %s, %s" % (t.strftime("%A"), clock_text(now_hm)),
-                       "next": ({"id": nxt["id"], "occurrence": nxt["occurrence"], "title": nxt["title"], "color": nxt["color"], "icon": nxt["icon"], "source": nxt["source"],
+                       "next": ({"id": nxt["id"], "rev": nxt.get("rev", ""), "occurrence": nxt["occurrence"], "title": nxt["title"], "color": nxt["color"], "icon": nxt["icon"], "source": nxt["source"],
                                  "open": nxt["open"], "time_text": nxt["time_text"], "line": "At %s, %s" % (nxt["time_text"], nxt["until_words"]),
                                  "button": "I'm going" if nxt["source"] == "colony" else "Done",
                                  # others at the same time: none is first. `next` is the first as the book gave them, for a screen
                                  # that draws one; a screen that can order them (the viewer's own order, their reading direction) uses `nexts`
                                  "also": [{"id": x["id"], "title": x["title"], "source": x["source"]} for x in tied]} if nxt else None),
-                       "nexts": [{"id": n["id"], "occurrence": n["occurrence"], "title": n["title"], "color": n["color"], "icon": n["icon"], "source": n["source"],
+                       "nexts": [{"id": n["id"], "rev": n.get("rev", ""), "occurrence": n["occurrence"], "title": n["title"], "color": n["color"], "icon": n["icon"], "source": n["source"],
                                   "open": n["open"], "time_text": n["time_text"], "line": "At %s, %s" % (n["time_text"], n["until_words"]),
                                   "button": "I'm going" if n["source"] == "colony" else "Done"} for n in nexts],
                        "unmarked": unmarked, "later": later, "did": did,

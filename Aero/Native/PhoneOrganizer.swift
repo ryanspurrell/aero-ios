@@ -116,17 +116,17 @@ final class PhoneOrganizer: OrganizerBackend {
                     rec["done_until"] = .string(at)
                     rec["deferred"] = nil       // the occurrence that was put off is the one just done; the versions keep the deferral
                 }
-                observeDone(&rec, presented: args["presented"])     // when it was done, and how it was shown
+                observeDone(&rec, presented: args["presented"], tap: tap(args, oid, before.id, occ: target))     // when, how it was shown, the rest of the tap
                 why = "done for \(target)"
             } else {
-                rec["status"] = .string("done"); observeDone(&rec, presented: args["presented"]); why = "done"
+                rec["status"] = .string("done"); observeDone(&rec, presented: args["presented"], tap: tap(args, oid, before.id)); why = "done"
             }
         case "skip":
             // Skip beside Done (Aryn, 2026-10-19): a dated observation that she skipped it, kept like `done_ats`; it accumulates, nothing is
             // deleted, and only the act is stored (organizer_service.py `skip`).
             guard type == "task" else { throw Failure.noSuchItem }
             let atText = shown(clock())
-            let entry = Presentation.observation(at: atText, presented: args["presented"])
+            let entry = Presentation.observation(at: atText, presented: args["presented"], tap: tap(args, oid, before.id, occ: args["occurrence"]?.stringValue ?? ""))
             var seen = rec["skipped_ats"]?.arrayValue ?? []
             if rec["repeat"]?.stringValue?.isEmpty == false {
                 let occ = try await reader.call("occurrence", ["rec": .object(rec)])
@@ -140,8 +140,7 @@ final class PhoneOrganizer: OrganizerBackend {
                 }
                 why = "skipped for \(target)"
             } else {
-                if let last = seen.last, Presentation.obsTime(last)?.prefix(10) == atText.prefix(10) { seen.removeLast() }
-                why = "skipped"
+                why = "skipped"            // every tap is kept (the timeline shows one row a day)
             }
             rec["skipped_ats"] = .array(seen + [entry])
         case "reopen":
@@ -158,7 +157,7 @@ final class PhoneOrganizer: OrganizerBackend {
             let wasDone = rec["status"]?.stringValue == "done"
             for (k, v) in cleaned.objectValue ?? [:] { rec[k] = v }
             // edited to done: the same observation Complete makes, with its time
-            if type == "task", rec["repeat"]?.stringValue?.isEmpty != false, rec["status"]?.stringValue == "done", !wasDone { observeDone(&rec, presented: args["presented"]) }
+            if type == "task", rec["repeat"]?.stringValue?.isEmpty != false, rec["status"]?.stringValue == "done", !wasDone { observeDone(&rec, presented: args["presented"], tap: tap(args, oid, before.id)) }
             why = "changed"
             try await answered(before: before.rec, rec: &rec)
         }
@@ -170,12 +169,25 @@ final class PhoneOrganizer: OrganizerBackend {
 
     /// Done is a dated observation that accumulates (organizer_service.py `observe_done`): `done_ats` holds every time it was marked done,
     /// `done_at` the latest. Completing again adds one and never replaces the first.
-    private func observeDone(_ rec: inout [String: JSONValue], presented: JSONValue? = nil) {
+    /// What a tap records beside its layout (design__tap_record_2026-10-19.md; organizer_service.py `tap_of`): the item's pointer only, never its
+    /// title or notes; who; the moment in her own sequence; what she saw (`rev`) and whether it was stale (kept, not refused); device; version.
+    private func tap(_ args: [String: JSONValue], _ oid: String, _ currentRev: String, occ: String = "") -> [String: JSONValue] {
+        let pres = args["presented"]?.objectValue ?? [:]
+        let rev = args["rev"]?.stringValue ?? ""
+        var out: [String: JSONValue] = [
+            "item": .string("organizer.tasks/" + String(oid.prefix(8))), "asks": .string("done"), "occ": .string(occ), "who": .string(Self.person),
+            "moment": .number(Double(Presentation.nextMoment())), "saw": .string(rev),
+            "unseen": .bool(!rev.isEmpty && !currentRev.hasPrefix(rev)),
+            "device": .string(pres["device"]?.stringValue ?? ""), "writer": .string(Presentation.writer),
+            "client": .string(pres["app"]?.stringValue ?? ""), "chosen": .bool(pres["chosen"]?.boolValue ?? false)]
+        if case .number(let p)? = pres["prob"], p >= 0, p <= 1 { out["prob"] = .number(p) } else { out["prob"] = .null }
+        return out
+    }
+
+    private func observeDone(_ rec: inout [String: JSONValue], presented: JSONValue? = nil, tap: [String: JSONValue]? = nil) {
         let atText = shown(clock())
         var seen = rec["done_ats"]?.arrayValue ?? (rec["done_at"].map { [$0] } ?? [])
-        // one a day is shown, so one a day is kept (the versions log keeps every time)
-        if rec["repeat"]?.stringValue?.isEmpty != false, let last = seen.last, Presentation.obsTime(last)?.prefix(10) == atText.prefix(10) { seen.removeLast() }
-        seen.append(Presentation.observation(at: atText, presented: presented))
+        seen.append(Presentation.observation(at: atText, presented: presented, tap: tap))     // every tap is kept
         rec["done_ats"] = .array(seen)
         rec["done_at"] = .string(atText)
     }
