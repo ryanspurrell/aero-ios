@@ -106,16 +106,22 @@ def day_words(day, today):
 
 
 def _entry(source, kind, key, title, date, time="", end="", all_day=False, state="open", done_at="", since="", color=None, icon=None,
-           repeat=False, ref=None, question=None, mark="", mark_text="", moved_to=None, done_state=None):
+           repeat=False, ref=None, question=None, mark="", mark_text="", moved_to=None, done_state=None, occurrence=""):
     c, i = _LOOKS[0][kind]
     return {"source": source, "type": kind, "id": key, "title": title, "date": date.isoformat(), "time": time, "time_text": clock_text(time),
             "end": end, "end_text": clock_text(end), "all_day": all_day, "state": state, "done_at": done_at, "done_at_text": clock_text(done_at),
             "since": since, "color": color or c, "icon": icon or i, "repeat": repeat, "open": ref or {"app": "organizer", "id": key},
             "question": question, "mark": mark, "mark_text": mark_text, "moved_to": moved_to,
+            "occurrence": occurrence,            # which instance of a repeat the row is for ("YYYY-MM-DD HH:MM"), so Done and Skip act on it
             # was it done? four values from the records (Aryn, 2026-10-19, "every button is one of the four values"): "yes" a done is
             # recorded, "no" a skip is recorded, "all" both are, "none" neither (not marked done). A Colony event is not asked: "".
             "done_state": ("" if source != "organizer" else "yes" if state == "done" else "no" if state == "skipped" else "none")
             if done_state is None else done_state}
+
+
+def obs_time(x):
+    """The time of an observation: a plain 'YYYY-MM-DD HH:MM' (older records) or a record {at, layout, pointer, surface, direction}."""
+    return x.get("at") if isinstance(x, dict) else x
 
 
 def shown_(d):
@@ -239,32 +245,67 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
             rep_timed = rec.get("start_timed") is True          # an hour given as 00:00 is a time, not a date alone
             # the times that count (a past time nobody ticked is not claimed either way; the times a put-off holds back wait), then the cap
             moved_occ = when(rec) if held else None             # the one occurrence that was put off (the rest are their own instances)
-            times = [o for o in times if (done_until and o <= done_until) or not (o.date() < today or (moved_occ is not None and o == moved_occ))][:ITEMS_MAX]
             skipped_for = set(rec.get("skipped_for") or [])
-            ticked_days = {o.date() for o in times if done_until and o <= done_until and shown_(o) not in skipped_for}
-            # a put-off occurrence that was completed: its done row says it was done later, and the day it was done says what it was due
-            by_from = {m.get("from"): m for m in rec.get("done_moves") or []}
-            by_at = {m.get("at"): m for m in rec.get("done_moves") or []}
-            for x in rec.get("done_ats") or []:
-                da = local(x)                                    # a completion on a day that has no ticked time of its own
-                if da and first <= da.date() <= last and da.date() not in ticked_days:
-                    mv = by_at.get(x)
-                    was = "Was due %s" % day_words(local(mv["from"]).date(), today) if mv else ""
-                    put(_entry("organizer", kind, key, title, da.date(), _hm(da), state="done", done_at=_hm(da), repeat=True,
-                               mark="due_then_done" if mv else "", mark_text=was, **look))
-            for o in times:
-                ticked = bool(done_until and o <= done_until)
-                if ticked and shown_(o) in skipped_for:
-                    # this occurrence was skipped: it reads Skipped, quiet (the act is the evidence)
-                    put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (rep_timed or o.hour or o.minute) else "", state="skipped",
-                               mark="skipped", mark_text="Skipped", repeat=True, **look))
+            done_for = set(rec.get("done_for") or [])
+            times = [o for o in times if (done_until and o <= done_until) or shown_(o) in done_for or shown_(o) in skipped_for
+                     or not (o.date() < today or (moved_occ is not None and o == moved_occ))][:ITEMS_MAX]
+            # each occurrence is its own instance, with its own answer to "was it done?": done only yes, skipped only no, both all, neither
+            # none. A time ticked by the older watermark alone counts as done unless it was skipped.
+            def instance(o):
+                sk = shown_(o) in skipped_for
+                dn = shown_(o) in done_for or bool(done_until and o <= done_until and not sk)
+                return "all" if sk and dn else "no" if sk else "yes" if dn else "none"
+            # a put-off occurrence that was completed or skipped: its row says it was done or skipped later, and the day it was done says
+            # what it was due
+            moves = {"done": rec.get("done_moves") or [], "skip": rec.get("skip_moves") or []}
+            by_from = {k: {m.get("from"): m for m in v} for k, v in moves.items()}
+            by_at = {k: {m.get("at"): m for m in v} for k, v in moves.items()}
+            seen_rows = set()                                    # (day, time) of the rows made for occurrences, so a completion at that
+            for o in times:                                      # very time is not drawn twice
+                ds = instance(o)
+                hm = _hm(o) if (rep_timed or o.hour or o.minute) else ""
+                f = shown_(o)
+                if ds == "none":
+                    put(_entry("organizer", kind, key, title, o.date(), hm, state="open", repeat=True, question=q, occurrence=f, **look))
                     continue
-                put(_entry("organizer", kind, key, title, o.date(), _hm(o) if (rep_timed or o.hour or o.minute) else "", state="done" if ticked else "open",
-                           done_at=_hm(done_until) if ticked and done_until and done_until.date() == o.date() and (done_until.hour or done_until.minute) else "",
-                           repeat=True, question=q,
-                           mark="due_then_done" if ticked and shown_(o) in by_from else "",
-                           mark_text=("Done later, on %s" % day_words(local(by_from[shown_(o)]["at"]).date(), today)) if ticked and shown_(o) in by_from else "",
-                           **look))
+                seen_rows.add((o.date(), hm, ds))
+                if ds == "no":
+                    mv = by_from["skip"].get(f)
+                    put(_entry("organizer", kind, key, title, o.date(), hm, state="skipped", mark="skipped", repeat=True, occurrence=f,
+                               mark_text=("Skipped later, on %s" % day_words(local(mv["at"]).date(), today)) if mv else "Skipped", **look))
+                    continue
+                mv = by_from["done"].get(f)
+                text = "Done and skipped" if ds == "all" else ("Done later, on %s" % day_words(local(mv["at"]).date(), today)) if mv else ""
+                put(_entry("organizer", kind, key, title, o.date(), hm, state="done", repeat=True, occurrence=f, question=q,
+                           done_at=_hm(done_until) if done_until and done_until.date() == o.date() and (done_until.hour or done_until.minute) else "",
+                           mark="due_then_done" if mv else "", mark_text=text, done_state=ds, **look))
+            ticked_here = {}
+            for o in times:
+                if instance(o) in ("yes", "all") and shown_(o) not in by_from["done"]:
+                    ticked_here[o.date()] = ticked_here.get(o.date(), 0) + 1
+            skipped_days = {o.date() for o in times if instance(o) in ("no", "all")}
+            # every completion is seen: one that was a put-off occurrence's has its own row ("Was due <day>"); the others have the row of
+            # the time they ticked, and one more than the ticked times of its day has a row at its own time (two completions, one day)
+            plain = {}
+            for x in rec.get("done_ats") or []:
+                da = local(obs_time(x))
+                if not da or not (first <= da.date() <= last):
+                    continue
+                mv = by_at["done"].get(obs_time(x))
+                if mv:
+                    put(_entry("organizer", kind, key, title, da.date(), _hm(da), state="done", done_at=_hm(da), repeat=True,
+                               mark="due_then_done", mark_text="Was due %s" % day_words(local(mv["from"]).date(), today), **look))
+                else:
+                    plain.setdefault(da.date(), []).append(da)
+            for day, cs in plain.items():
+                for da in sorted(cs)[len(cs) - max(0, len(cs) - ticked_here.get(day, 0)):] if len(cs) > ticked_here.get(day, 0) else []:
+                    put(_entry("organizer", kind, key, title, day, _hm(da), state="done", done_at=_hm(da), repeat=True, **look))
+            for x in rec.get("skipped_ats") or []:
+                sa = local(obs_time(x))                          # and a skip, on the day it was made (a moved one says what it was due)
+                mv = by_at["skip"].get(obs_time(x))
+                if sa and first <= sa.date() <= last and (mv or sa.date() not in skipped_days):
+                    put(_entry("organizer", kind, key, title, sa.date(), _hm(sa), state="skipped", mark="skipped", repeat=True,
+                               mark_text="Was due %s" % day_words(local(mv["from"]).date(), today) if mv else "Skipped", **look))
             if held and rule is not None:
                 # put off: the occurrence that was current goes to the new time. The new day has it as normal ("Moved from <old day>"), and
                 # stays when the day passes, as behind, like a task that is not repeating; the old day says where it went, quietly. The
@@ -280,10 +321,10 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
                     moved_from = "Moved from " + clock_text(_hm(w)) if old_timed else "Moved"
                 if first <= held.date() <= last:
                     put(_entry("organizer", kind, key, title, held.date(), _hm(held) if new_timed else "", repeat=True, question=q,
-                               mark="moved_from", mark_text=moved_from, **look))
+                               mark="moved_from", mark_text=moved_from, occurrence=shown_(w) if w else "", **look))
                 if held.date() < today and first <= today <= last:
                     put(_entry("organizer", kind, key, title, today, state="unmarked", since=held.date().isoformat(), repeat=True, question=q,
-                               mark="moved_from", mark_text=moved_from, **look))
+                               mark="moved_from", mark_text=moved_from, occurrence=shown_(w) if w else "", **look))
                 if w is not None and w.date() != held.date() and first <= w.date() <= last:
                     where = day_words(held.date(), today) + (" " + clock_text(_hm(held)) if new_timed else "")
                     said = ("%s %s; moved to %s" % ("Was due" if w.date() < today else "Due", day_words(w.date(), today), where)) \
@@ -294,14 +335,14 @@ def entries_between(book, first, last, today, locked_on, local, when, events, li
         # done is a dated observation that accumulates (Aryn, 2026-10-17): every one is on its own day, faded; a task never loses one
         obs = {}
         for x in rec.get("done_ats") or ([rec["done_at"]] if rec.get("done_at") else []):
-            o = local(x)
+            o = local(obs_time(x))
             if o and (o.date() not in obs or o > obs[o.date()]):
                 obs[o.date()] = o
         # a skip is a dated observation too (Aryn, 2026-10-19): the row reads "Skipped", quiet: evidence it was not done, so not "not marked done",
         # and not done. The latest observation of a day is what that day shows; only the act is kept, never why
         sk = {}
         for x in rec.get("skipped_ats") or []:
-            o = local(x)
+            o = local(obs_time(x))
             if o and (o.date() not in sk or o > sk[o.date()]):
                 sk[o.date()] = o
         states[key] = "all" if obs and sk else "yes" if obs else "no" if sk else "none"
@@ -506,13 +547,13 @@ def day_view(entries, day, t):
             "prev": (day - dt.timedelta(days=1)).isoformat(), "next": (day + dt.timedelta(days=1)).isoformat(),
             "now": {"time": now_hm, "time_text": clock_text(now_hm)}, "rows": rows, "anytime": anyrows,
             "simple": {"greeting": greeting(t.hour), "clock": "It's %s, %s" % (t.strftime("%A"), clock_text(now_hm)),
-                       "next": ({"id": nxt["id"], "title": nxt["title"], "color": nxt["color"], "icon": nxt["icon"], "source": nxt["source"],
+                       "next": ({"id": nxt["id"], "occurrence": nxt["occurrence"], "title": nxt["title"], "color": nxt["color"], "icon": nxt["icon"], "source": nxt["source"],
                                  "open": nxt["open"], "time_text": nxt["time_text"], "line": "At %s, %s" % (nxt["time_text"], nxt["until_words"]),
                                  "button": "I'm going" if nxt["source"] == "colony" else "Done",
                                  # others at the same time: none is first. `next` is the first as the book gave them, for a screen
                                  # that draws one; a screen that can order them (the viewer's own order, their reading direction) uses `nexts`
                                  "also": [{"id": x["id"], "title": x["title"], "source": x["source"]} for x in tied]} if nxt else None),
-                       "nexts": [{"id": n["id"], "title": n["title"], "color": n["color"], "icon": n["icon"], "source": n["source"],
+                       "nexts": [{"id": n["id"], "occurrence": n["occurrence"], "title": n["title"], "color": n["color"], "icon": n["icon"], "source": n["source"],
                                   "open": n["open"], "time_text": n["time_text"], "line": "At %s, %s" % (n["time_text"], n["until_words"]),
                                   "button": "I'm going" if n["source"] == "colony" else "Done"} for n in nexts],
                        "unmarked": unmarked, "later": later, "did": did,

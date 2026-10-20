@@ -107,32 +107,43 @@ final class PhoneOrganizer: OrganizerBackend {
             } else if rec["repeat"]?.stringValue?.isEmpty == false {
                 let occ = try await reader.call("occurrence", ["rec": .object(rec)])
                 guard let at = occ.objectValue?["at"]?.stringValue else { throw Failure.noSuchItem }
-                rec["done_until"] = .string(at)
-                rec["deferred"] = nil           // the occurrence that was put off is the one just done; the versions keep the deferral
-                observeDone(&rec)               // when it was done, on its own day (a repeat's ticked times are on theirs)
+                // each occurrence is its own instance: a button names the one it is for (`occurrence`); with none it is the current one
+                let target = args["occurrence"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? at
                 if case .number(let n)? = rec["done_count"] { rec["done_count"] = .number(n + 1) } else { rec["done_count"] = .number(1) }
-                why = "done for \(at)"
+                let doneFor = (rec["done_for"]?.arrayValue ?? []).map { $0.stringValue ?? "" }
+                rec["done_for"] = .array(Array(NSOrderedSet(array: doneFor + [target])).compactMap { ($0 as? String).map(JSONValue.string) })
+                if target == at {
+                    rec["done_until"] = .string(at)
+                    rec["deferred"] = nil       // the occurrence that was put off is the one just done; the versions keep the deferral
+                }
+                observeDone(&rec, presented: args["presented"])     // when it was done, and how it was shown
+                why = "done for \(target)"
             } else {
-                rec["status"] = .string("done"); observeDone(&rec); why = "done"
+                rec["status"] = .string("done"); observeDone(&rec, presented: args["presented"]); why = "done"
             }
         case "skip":
             // Skip beside Done (Aryn, 2026-10-19): a dated observation that she skipped it, kept like `done_ats`; it accumulates, nothing is
             // deleted, and only the act is stored (organizer_service.py `skip`).
             guard type == "task" else { throw Failure.noSuchItem }
-            let at = JSONValue.string(shown(clock()))
+            let atText = shown(clock())
+            let entry = Presentation.observation(at: atText, presented: args["presented"])
             var seen = rec["skipped_ats"]?.arrayValue ?? []
             if rec["repeat"]?.stringValue?.isEmpty == false {
                 let occ = try await reader.call("occurrence", ["rec": .object(rec)])
-                guard let when = occ.objectValue?["at"]?.stringValue else { throw Failure.noSuchItem }
-                rec["skipped_for"] = .array((rec["skipped_for"]?.arrayValue ?? []) + [.string(when)])
-                rec["done_until"] = .string(when)
-                rec["deferred"] = nil
-                why = "skipped for \(when)"
+                guard let current = occ.objectValue?["at"]?.stringValue else { throw Failure.noSuchItem }
+                let target = args["occurrence"]?.stringValue.flatMap { $0.isEmpty ? nil : $0 } ?? current
+                let skippedFor = (rec["skipped_for"]?.arrayValue ?? []).map { $0.stringValue ?? "" }
+                rec["skipped_for"] = .array(Array(NSOrderedSet(array: skippedFor + [target])).compactMap { ($0 as? String).map(JSONValue.string) })
+                if target == current {
+                    rec["done_until"] = .string(current)
+                    rec["deferred"] = nil
+                }
+                why = "skipped for \(target)"
             } else {
-                if let last = seen.last?.stringValue, last.prefix(10) == at.stringValue?.prefix(10) { seen.removeLast() }
+                if let last = seen.last, Presentation.obsTime(last)?.prefix(10) == atText.prefix(10) { seen.removeLast() }
                 why = "skipped"
             }
-            rec["skipped_ats"] = .array(seen + [at])
+            rec["skipped_ats"] = .array(seen + [entry])
         case "reopen":
             rec["status"] = .string(firstStatus(type))
             // an older record's one done time is kept as an observation
@@ -147,7 +158,7 @@ final class PhoneOrganizer: OrganizerBackend {
             let wasDone = rec["status"]?.stringValue == "done"
             for (k, v) in cleaned.objectValue ?? [:] { rec[k] = v }
             // edited to done: the same observation Complete makes, with its time
-            if type == "task", rec["repeat"]?.stringValue?.isEmpty != false, rec["status"]?.stringValue == "done", !wasDone { observeDone(&rec) }
+            if type == "task", rec["repeat"]?.stringValue?.isEmpty != false, rec["status"]?.stringValue == "done", !wasDone { observeDone(&rec, presented: args["presented"]) }
             why = "changed"
             try await answered(before: before.rec, rec: &rec)
         }
@@ -159,14 +170,14 @@ final class PhoneOrganizer: OrganizerBackend {
 
     /// Done is a dated observation that accumulates (organizer_service.py `observe_done`): `done_ats` holds every time it was marked done,
     /// `done_at` the latest. Completing again adds one and never replaces the first.
-    private func observeDone(_ rec: inout [String: JSONValue]) {
-        let at = JSONValue.string(shown(clock()))
+    private func observeDone(_ rec: inout [String: JSONValue], presented: JSONValue? = nil) {
+        let atText = shown(clock())
         var seen = rec["done_ats"]?.arrayValue ?? (rec["done_at"].map { [$0] } ?? [])
         // one a day is shown, so one a day is kept (the versions log keeps every time)
-        if rec["repeat"]?.stringValue?.isEmpty != false, let last = seen.last?.stringValue, last.prefix(10) == at.stringValue?.prefix(10) { seen.removeLast() }
-        seen.append(at)
+        if rec["repeat"]?.stringValue?.isEmpty != false, let last = seen.last, Presentation.obsTime(last)?.prefix(10) == atText.prefix(10) { seen.removeLast() }
+        seen.append(Presentation.observation(at: atText, presented: presented))
         rec["done_ats"] = .array(seen)
-        rec["done_at"] = at
+        rec["done_at"] = .string(atText)
     }
 
     /// A line quick add was not sure of is answered when the person sets its time: choosing one of the kept readings is an `update`

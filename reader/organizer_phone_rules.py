@@ -73,7 +73,12 @@ def occurrence(rec, after=None):
         return None
     done = local(rec.get("done_until"))
     rule = rrulestr(rec["repeat"], dtstart=start)
-    return rule.after(done, inc=False) if done else rule.after(start, inc=True)
+    o = rule.after(done, inc=False) if done else rule.after(start, inc=True)
+    # an occurrence completed or skipped on its own (each is its own instance) is not the current one
+    handled = set(rec.get("done_for") or []) | set(rec.get("skipped_for") or [])
+    while o is not None and shown(o) in handled:
+        o = rule.after(o, inc=False)
+    return o
 
 
 def when(rec):

@@ -143,4 +143,19 @@ final class DayRequirementsTests: XCTestCase {
         XCTAssertEqual(rec["skipped_ats"]?.arrayValue?.count, 1)
         XCTAssertEqual(rec["done_ats"]?.arrayValue?.count, 1)
     }
+
+    /// Not run when written. The same presentation has one id; a changed size has another; the observation names layout, pointer, surface, direction.
+    func testALayoutIsContentAddressedAndTheObservationSaysHowItWasShown() throws {
+        var bigger = Presentation.nextCard
+        bigger.pointers[0].size = "huge"
+        XCTAssertEqual(Presentation.nextCard.id, Presentation.nextCard.id)
+        XCTAssertNotEqual(Presentation.nextCard.id, bigger.id, "a button's size changed: another layout")
+        let entry = Presentation.observation(at: "2026-10-19 10:00", presented: Presentation.presented(Presentation.nextCard, pointer: "skip"))
+        XCTAssertEqual(entry.objectValue?["surface"]?.stringValue, "ios.next")
+        XCTAssertEqual(entry.objectValue?["pointer"]?.stringValue, "skip")
+        XCTAssertEqual(entry.objectValue?["layout"]?.stringValue, Presentation.nextCard.id)
+        XCTAssertTrue(["ltr", "rtl"].contains(entry.objectValue?["direction"]?.stringValue ?? ""))
+        XCTAssertEqual(Presentation.observation(at: "2026-10-19 10:00", presented: nil).stringValue, "2026-10-19 10:00", "a plain time stays plain")
+        XCTAssertEqual(Presentation.obsTime(entry), "2026-10-19 10:00")
+    }
 }

@@ -90,14 +90,20 @@ final class OrganizerDayStore: ObservableObject {
         do { try await api.apply(choice.answer); return true } catch { failure = error.localizedDescription; return false }
     }
 
-    func setDone(_ id: String, done: Bool) async -> Bool {
-        do { try await api.send(done ? "complete" : "reopen", ["id": .string(id)]); return true }
+    func setDone(_ id: String, done: Bool, occurrence: String? = nil, presented: JSONValue? = nil) async -> Bool {
+        var args: [String: JSONValue] = ["id": .string(id)]
+        if done, let occurrence, !occurrence.isEmpty { args["occurrence"] = .string(occurrence) }
+        if done, let presented { args["presented"] = presented }
+        do { try await api.send(done ? "complete" : "reopen", args); return true }
         catch { failure = error.localizedDescription; return false }
     }
 
     /// Skip: records that she skipped it, dated; nothing is deleted and it can be done after (both are then kept and shown as both).
-    func skip(_ id: String) async -> Bool {
-        do { try await api.send("skip", ["id": .string(id)]); return true }
+    func skip(_ id: String, occurrence: String? = nil, presented: JSONValue? = nil) async -> Bool {
+        var args: [String: JSONValue] = ["id": .string(id)]
+        if let occurrence, !occurrence.isEmpty { args["occurrence"] = .string(occurrence) }
+        if let presented { args["presented"] = presented }
+        do { try await api.send("skip", args); return true }
         catch { failure = error.localizedDescription; return false }
     }
 
