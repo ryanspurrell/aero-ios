@@ -37,6 +37,13 @@ class _Book:
         self.versions = {}
 
 
+def _shown(book, rec):
+    """Whether a task's words may be shown on the phone, which is never in Locked mode (the service's visible_now with Locked mode off):
+    only a task marked Open, in a list that is not Locked or private."""
+    proj = book.now[rec["project"]]["rec"] if rec.get("project") in book.now else {}
+    return rec.get("locked") is False and not (proj.get("locked") or proj.get("private"))
+
+
 # The fields a record may carry (the service's FIELDS), so nothing else is copied from a reading into a record.
 ALLOWED = {"title", "notes", "attention", "project", "parent", "due", "remind", "repeat", "start", "status", "goal", "why", "done", "blocker",
            "next_action", "what", "folder", "urgent", "color", "icon", "sections", "section", "collapsed", "quantity", "store", "cost",
@@ -129,10 +136,13 @@ def upcoming(a):
     limit = int(a.get("limit") or 64)
     horizon = t + dt.timedelta(days=int(a.get("days") or 120))
     out = []
+    book = _Book(a["records"])
     for r in a["records"]:
         rec = r["rec"]
         if rec.get("type") != "task" or rec.get("status") != "open" or rec.get("aside"):
             continue
+        if not _shown(book, rec):
+            continue            # the phone is never in Locked mode: a task not marked Open, or in a Locked list, is not told (its title would reach the lock screen)
         d = (rec.get("deferred") or {}).get("until")
         hold = R.local(d) if d else None
         if rec.get("repeat") and rec.get("start"):
@@ -140,11 +150,12 @@ def upcoming(a):
             try:
                 rule = rrulestr(rec["repeat"], dtstart=R.local(rec["start"]))
                 done = R.local(rec["done_until"]) if rec.get("done_until") else None
+                handled = set(rec.get("done_for") or []) | set(rec.get("skipped_for") or [])      # a time done or skipped on its own is not told
                 n = 0
                 for o in rule.xafter(max(t, done) if done else t, count=limit, inc=False) if hasattr(rule, "xafter") else rule.between(t, horizon, inc=False)[:limit]:
                     if o > horizon or n >= limit:
                         break
-                    if (o.hour or o.minute) and not (hold and o < hold):
+                    if (o.hour or o.minute) and not (hold and o < hold) and R.shown(o) not in handled:
                         out.append((o, r["oid"], rec.get("title") or ""))
                         n += 1
             except (ValueError, TypeError):
