@@ -168,10 +168,12 @@ struct ChatRoomAnswer: Codable, Equatable {
     var messages: [ChatWireMessage]
     var seals: [ChatSeal]
     var devices: [String: [ChatDeviceInfo]]
+    /// The public keys of devices removed since, only to open a key one of them sealed and to check a message one signed; nothing is sealed to them.
+    var pastDevices: [String: [ChatDeviceInfo]]?
     var holders: [String: String]?
     var writing: [ChatWritingWire]?
     var me: String?
-    enum CodingKeys: String, CodingKey { case id, name, epoch, ai, members, messages, seals, devices, holders, writing, me; case isLocked = "private" }
+    enum CodingKeys: String, CodingKey { case id, name, epoch, ai, members, messages, seals, devices, holders, writing, me; case isLocked = "private"; case pastDevices = "past_devices" }
 
     var locked: Bool { isLocked ?? false }
 }

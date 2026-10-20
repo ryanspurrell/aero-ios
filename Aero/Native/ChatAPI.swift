@@ -26,6 +26,9 @@ final class ChatAPI {
         case devicesFull(Int)
         /// Aero says this device was removed from the person's list and must make new keys to be added again.
         case deviceRemoved
+        /// Aero removed nothing: the new device is not shown to open every key the old one holds alike. `rooms` is how many chats would stay
+        /// closed, and `ack` is Aero's acknowledgement for exactly those (empty when none would). Sending it back says they may.
+        case notCovered(rooms: Int, ack: String)
         case server(String)
         case unreadable
     }
@@ -92,13 +95,15 @@ final class ChatAPI {
     /// What the server said when it refused: the Locked answer, a sign-in problem, or its own words.
     static func failure(status: Int, data: Data) -> Failure? {
         struct Said: Decodable {
-            var error: String?; var locked: Bool?; var devicesFull: Int?; var deviceRemoved: Bool?
-            enum CodingKeys: String, CodingKey { case error, locked; case devicesFull = "devices_full"; case deviceRemoved = "device_removed" }
+            struct Holds: Decodable { var rooms: Int? }
+            var error: String?; var locked: Bool?; var devicesFull: Int?; var deviceRemoved: Bool?; var notCovered: Bool?; var holds: Holds?; var ack: String?
+            enum CodingKeys: String, CodingKey { case error, locked, holds, ack; case devicesFull = "devices_full"; case deviceRemoved = "device_removed"; case notCovered = "not_covered" }
         }
         let said = try? JSONDecoder().decode(Said.self, from: data)
         if said?.locked == true { return .locked }
         if status >= 400, let full = said?.devicesFull { return .devicesFull(full) }
         if status >= 400, said?.deviceRemoved == true { return .deviceRemoved }
+        if status >= 400, said?.notCovered == true { return .notCovered(rooms: said?.holds?.rooms ?? 0, ack: said?.ack ?? "") }
         if status == 401 || status == 403 { return .notSignedIn }
         if status >= 400 { return .server(said?.error ?? "That didn't work. Try again.") }
         return nil
@@ -181,17 +186,18 @@ final class ChatAPI {
     struct RemoveBody: Encodable {
         var device: String
         /// The person's device that takes this one's place: Aero removes this one only if that one already holds a seal of every key this one
-        /// does (checked in one step with the removal). This app never sends an acknowledgement of a loss: it removes only a device it is
-        /// replacing in that way.
+        /// does (checked in one step with the removal).
         var replacedBy: String? = nil
-        enum CodingKeys: String, CodingKey { case device; case replacedBy = "replaced_by" }
+        /// Aero's acknowledgement (a 409's `ack`) of exactly the keys that would stay closed: the person saying so. Only ever one Aero gave.
+        var ack: String? = nil
+        enum CodingKeys: String, CodingKey { case device, ack; case replacedBy = "replaced_by" }
     }
 
     /// Take one of this person's own devices out of their list in Aero. Never another person's: Aero answers 404 for an id that is not
     /// in the signed-in person's list, which is taken as done. Refused (409) if it holds the only copy of a chat's key, or, with
     /// `replacedBy`, if that device cannot open everything it can yet.
-    func removeDevice(_ id: String, replacedBy: String? = nil) async throws {
-        do { _ = try await post("devices/remove", RemoveBody(device: id, replacedBy: replacedBy)) }
+    func removeDevice(_ id: String, replacedBy: String? = nil, ack: String? = nil) async throws {
+        do { _ = try await post("devices/remove", RemoveBody(device: id, replacedBy: replacedBy, ack: ack)) }
         catch let f as Failure where ChatAPI.alreadyGone(f) { return }
     }
 

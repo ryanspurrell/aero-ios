@@ -474,28 +474,38 @@ enum ChatRenewalCheck {
         SHA256.hash(data: Data("\(iv)|\(ct)".utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The proofs for every key the old device holds that the new device opens to the identical key, and how many it does not. A seal the
-    /// old device itself cannot open counts as not opened too: Aero asks for a proof for every one, so such a replacement waits rather than
-    /// guessing that nothing is lost. A proof is the new device's signature over the seal as stored and a value (`kc`) only the room key
-    /// makes: HMAC-SHA256 of "chat-opened|room|epoch|person|device|sealhash", keyed by the key.
-    static func prove(theirs: ChatHeldKeys, mine: ChatHeldKeys, old: ChatDevice, fresh: ChatDevice) -> (proofs: [ChatOpenedProof], unopened: Int) {
-        var proofs: [ChatOpenedProof] = []
-        var bad = 0
-        for held in theirs.keys {
-            guard let key = opened(held, in: theirs, by: old),
-                  let seal = mine.keys.first(where: { $0.room == held.room && $0.epoch == held.epoch }),
-                  let got = opened(seal, in: mine, by: fresh), raw(got) == raw(key),
-                  let proof = proof(for: seal, key: got, by: fresh) else { bad += 1; continue }
-            proofs.append(proof)
-        }
-        return (proofs, bad)
+    /// The value only the room key makes, the same for every device that holds the key: HMAC-SHA256 of "chat-opened|room|epoch", keyed by it.
+    /// Aero cannot open a seal, so it takes a claim only when two devices of the person, each signing for its own seal, say the same `kc`.
+    static func keyCheck(room: String, epoch: Int, key: SymmetricKey) -> String {
+        ChatBase64.encode(Data(HMAC<SHA256>.authenticationCode(for: Data("chat-opened|\(room)|\(epoch)".utf8), using: key)))
     }
 
-    private static func proof(for seal: ChatHeldKey, key: SymmetricKey, by fresh: ChatDevice) -> ChatOpenedProof? {
+    /// For every key the old device holds: if the old device opens it, and the new device opens its own seal to the identical key, a signed
+    /// proof from EACH (`oldProofs` for the old device, `proofs` for the new). `unopened` counts the keys the old device opens that the new
+    /// does not (or to another key): those wait, since Aero or the PC may yet seal them right. `oldCannotOpen` counts the seals the old
+    /// device itself cannot open: no new device can be shown to open the same, so they are never proved, and are the person's to let go
+    /// (`ChatSession.acceptRenewalLoss`) rather than something to wait for.
+    static func prove(theirs: ChatHeldKeys, mine: ChatHeldKeys, old: ChatDevice, fresh: ChatDevice)
+        -> (proofs: [ChatOpenedProof], oldProofs: [ChatOpenedProof], unopened: Int, oldCannotOpen: Int) {
+        var proofs: [ChatOpenedProof] = []
+        var oldProofs: [ChatOpenedProof] = []
+        var bad = 0, cannot = 0
+        for held in theirs.keys {
+            guard let key = opened(held, in: theirs, by: old) else { cannot += 1; continue }
+            guard let seal = mine.keys.first(where: { $0.room == held.room && $0.epoch == held.epoch }),
+                  let got = opened(seal, in: mine, by: fresh), raw(got) == raw(key),
+                  let freshProof = signedProof(for: seal, key: got, by: fresh),
+                  let oldProof = signedProof(for: held, key: key, by: old) else { bad += 1; continue }
+            proofs.append(freshProof)
+            oldProofs.append(oldProof)
+        }
+        return (proofs, oldProofs, bad, cannot)
+    }
+
+    private static func signedProof(for seal: ChatHeldKey, key: SymmetricKey, by device: ChatDevice) -> ChatOpenedProof? {
         let h = sealHash(iv: seal.iv, ct: seal.ct)
-        let text = Data("chat-opened|\(seal.room)|\(seal.epoch)|\(fresh.person)|\(fresh.id)|\(h)".utf8)
-        let kc = ChatBase64.encode(Data(HMAC<SHA256>.authenticationCode(for: text, using: key)))
-        guard let sig = try? fresh.signRaw(openedPart(room: seal.room, epoch: seal.epoch, person: fresh.person, device: fresh.id, sealHash: h, kc: kc)) else { return nil }
+        let kc = keyCheck(room: seal.room, epoch: seal.epoch, key: key)
+        guard let sig = try? device.signRaw(openedPart(room: seal.room, epoch: seal.epoch, person: device.person, device: device.id, sealHash: h, kc: kc)) else { return nil }
         return ChatOpenedProof(room: seal.room, epoch: seal.epoch, kc: kc, sig: ChatBase64.encode(sig))
     }
 

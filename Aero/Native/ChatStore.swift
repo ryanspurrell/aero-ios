@@ -34,7 +34,7 @@ enum ChatOpener {
     static let notVerified = "This message couldn\u{2019}t be verified"
     static let notOpened = "This message couldn\u{2019}t be opened"
 
-    static func entry(_ m: ChatWireMessage, room: String, keys: [String: SymmetricKey], devices: [String: [ChatDeviceInfo]], holders: [String: String], locked: Bool) -> ChatEntry {
+    static func entry(_ m: ChatWireMessage, room: String, keys: [String: SymmetricKey], devices: [String: [ChatDeviceInfo]], past: [String: [ChatDeviceInfo]] = [:], holders: [String: String], locked: Bool) -> ChatEntry {
         func plain(_ why: String?, text: String? = nil) -> ChatEntry {
             ChatEntry(seq: m.seq, kind: m.kind, sender: m.sender, text: text, note: m.kind == "note" ? m.note : nil, at: m.at, unreadable: why)
         }
@@ -42,7 +42,8 @@ enum ChatOpener {
         guard let epoch = m.epoch, let iv = m.iv, let ct = m.ct, let sig = m.sig, let device = m.device else { return plain(notOpened) }
         guard let key = keys["\(room)|\(epoch)"] else { return plain(beforeYouJoined) }
         let owner = signer(of: m, locked: locked, devices: devices, holders: holders)
-        let signPublic = (devices[owner] ?? []).first(where: { $0.device == device })?.sign ?? ""
+        // the devices there are now, then those removed since: a message a removed device signed still checks
+        let signPublic = ((devices[owner] ?? []) + (past[owner] ?? [])).first(where: { $0.device == device })?.sign ?? ""
         do {
             let body = try ChatCrypto.open(room: room, epoch: epoch, sender: m.senderID ?? m.sender, device: device, iv: iv, ct: ct, sig: sig, key: key, signPublic: signPublic)
             // a reaction is an emoji under a message in the page, not a line of its own
@@ -127,6 +128,15 @@ final class ChatSingleFlight<Value> {
 
 // MARK: the session: who this is, this phone as a device, the keys opened
 
+/// What the person is asked when the old keys cannot open some chats: how many chats would stay closed, Aero's acknowledgement of exactly those,
+/// and the two devices (kept so that the answer can finish the move).
+struct ChatRenewalChoice {
+    let rooms: Int
+    let ack: String
+    let old: ChatDevice
+    let fresh: ChatDevice
+}
+
 @MainActor
 final class ChatSession {
     let api: ChatAPI
@@ -146,6 +156,9 @@ final class ChatSession {
     private(set) var renewedKeys = false
     /// The move to the Secure Enclave stopped because the new device could not open everything the old one can; the old one stays in use.
     private(set) var renewalProblem: String?
+    /// The old keys cannot open some chats, so they cannot be brought across: what the person is asked, until they answer. Nothing is changed
+    /// before they say (`acceptRenewalLoss` / `declineRenewalLoss`).
+    private(set) var renewalChoice: ChatRenewalChoice?
     private var flight: Task<(ChatRoomsAnswer, Int), Error>?
     private var flightSerial = 0
     /// The one `ensureDevice` that is running; a second call joins it (two screens asking on a first launch must not each make and
@@ -168,6 +181,7 @@ final class ChatSession {
         registered = false
         keys = [:]
         renewalProblem = nil
+        renewalChoice = nil
         me = ""
         person = ""
         api.forgetCookies()
@@ -252,31 +266,76 @@ final class ChatSession {
         catch ChatAPI.Failure.deviceRemoved { ChatNextDevice.clear(person: who, in: keyStore); return nil }   // taken out by the person: made again next time
         catch { return nil }
         guard g == generation else { return nil }
-        // Aero can only see that a seal exists, not whether it opens: so this phone opens every one (every room and epoch, hidden or not) with
-        // the new keys, compares the key with the one the old device gets, and proves it to Aero, before the old device is asked to go.
-        // Anything else stops here, with the old device kept.
-        guard await replacementOpensEverything(old: old, fresh: fresh) else {
-            if g == generation { renewalProblem = ChatWords.renewalStopped }
-            return nil
-        }
+        // Aero can only see that a seal exists, not whether it opens, and cannot open one itself: so this phone opens every one (every room and
+        // epoch, hidden or not) with the old keys and with the new, compares the two keys, and signs for each device what it opened; Aero takes
+        // only what the two say alike. Anything else stops here, with the old device kept.
+        let outcome = await replacementOpensEverything(old: old, fresh: fresh)
         guard g == generation else { return nil }
+        switch outcome {
+        case .opensAll:
+            break
+        case .waits:
+            renewalProblem = ChatWords.renewalStopped
+            return nil
+        case .oldCannotOpen:
+            // The old keys cannot open some seal, so nothing can show the new ones open the same: waiting does not help. Aero says what would stay
+            // closed; the person is told in plain words and chooses. Nothing is removed unless they do.
+            do { try await api.removeDevice(old.id, replacedBy: fresh.id) }
+            catch ChatAPI.Failure.notCovered(let rooms, let ack) where !ack.isEmpty {
+                renewalChoice = ChatRenewalChoice(rooms: rooms, ack: ack, old: old, fresh: fresh)
+                return nil
+            } catch { renewalProblem = ChatWords.renewalStopped; return nil }
+            renewedKeys = true
+            do { try ChatDeviceKeeper.replace(old, with: fresh, in: keyStore) } catch { /* used for this launch; see above */ }
+            return fresh
+        }
         do { try await api.removeDevice(old.id, replacedBy: fresh.id) } catch { return nil }
         renewedKeys = true
         do { try ChatDeviceKeeper.replace(old, with: fresh, in: keyStore) } catch { /* used for this launch; see above */ }
         return fresh
     }
 
+    /// The person said to move on and leave the chats the old keys cannot open closed: Aero is sent its own acknowledgement of exactly those,
+    /// and removes the old device only if what would stay closed is still what was said (otherwise it says it again, as it is now, and nothing
+    /// is removed). Then the new keys are kept as the person's own.
+    func acceptRenewalLoss() async {
+        guard let choice = renewalChoice else { return }
+        let g = generation
+        do { try await api.removeDevice(choice.old.id, replacedBy: choice.fresh.id, ack: choice.ack) }
+        catch ChatAPI.Failure.notCovered(let rooms, let ack) where !ack.isEmpty {
+            if g == generation { renewalChoice = ChatRenewalChoice(rooms: rooms, ack: ack, old: choice.old, fresh: choice.fresh) }
+            return
+        } catch { return }      // not reached Aero: still asked, nothing changed
+        guard g == generation else { return }
+        renewalChoice = nil
+        renewedKeys = true
+        do { try ChatDeviceKeeper.replace(choice.old, with: choice.fresh, in: keyStore) } catch { /* used for this launch; the next starts again */ }
+        device = choice.fresh
+    }
+
+    /// The person chose to keep things as they are: nothing changes, and it is asked again at the next launch.
+    func declineRenewalLoss() {
+        renewalChoice = nil
+        renewalProblem = ChatWords.renewalDeclined
+    }
+
+    private enum Replacement { case opensAll, waits, oldCannotOpen }
+
     /// Every key the old device holds, in every room and epoch, hidden rooms too: the full list comes from Aero's `devices/keys.json` (a
     /// device's own keys, no content, not held back by Locked), not from the chat list, which leaves out a Locked chat while Locked is shut.
-    /// Each is opened here with the new keys and compared with what the old device gets, and a signed proof of each is sent to Aero, which
-    /// removes the old device only once it has one for all of them. False when anything cannot be asked, does not open to the same key, or
-    /// cannot be proved (`ChatRenewalCheck.prove`).
-    private func replacementOpensEverything(old: ChatDevice, fresh: ChatDevice) async -> Bool {
-        guard let theirs = try? await api.heldKeys(device: old.id), let mine = try? await api.heldKeys(device: fresh.id) else { return false }
+    /// Each is opened here with the old keys and with the new and the two compared, and a signed proof from each device is sent to Aero, which
+    /// removes the old device only once the two say the same for all of them. `.waits` when anything cannot be asked or sent, or the new
+    /// keys do not open to the same key (the PC may yet seal it right); `.oldCannotOpen` when the old keys themselves cannot open some seal
+    /// and everything else is proved (`ChatRenewalCheck.prove`).
+    private func replacementOpensEverything(old: ChatDevice, fresh: ChatDevice) async -> Replacement {
+        guard let theirs = try? await api.heldKeys(device: old.id), let mine = try? await api.heldKeys(device: fresh.id) else { return .waits }
         let result = ChatRenewalCheck.prove(theirs: theirs, mine: mine, old: old, fresh: fresh)
-        guard result.unopened == 0 else { return false }
-        do { try await api.prove(device: fresh.id, proofs: result.proofs) } catch { return false }
-        return true
+        do {
+            try await api.prove(device: fresh.id, proofs: result.proofs)
+            try await api.prove(device: old.id, proofs: result.oldProofs)
+        } catch { return .waits }
+        if result.unopened > 0 { return .waits }
+        return result.oldCannotOpen > 0 ? .oldCannotOpen : .opensAll
     }
 
     func key(room: String, epoch: Int) -> SymmetricKey? { keys["\(room)|\(epoch)"] }
@@ -288,7 +347,8 @@ final class ChatSession {
     /// Open the keys sealed to this phone in a room answer.
     func openKeys(_ answer: ChatRoomAnswer, device d: ChatDevice) {
         for seal in answer.seals where keys["\(answer.id)|\(seal.epoch)"] == nil {
-            guard let sealer = (answer.devices[seal.byPerson] ?? []).first(where: { $0.device == seal.byDevice }) else { continue }
+            // a seal the old device made stays after it is removed: its public keys are given too (`pastDevices`), only for opening
+            guard let sealer = ((answer.devices[seal.byPerson] ?? []) + (answer.pastDevices?[seal.byPerson] ?? [])).first(where: { $0.device == seal.byDevice }) else { continue }
             // sealed for someone else's key, not 32 bytes, or not ours: left closed
             if let key = try? ChatCrypto.unseal(room: answer.id, seal: seal, sealerEcdh: sealer.ecdh, device: d) { keep(key, room: answer.id, epoch: seal.epoch) }
         }
@@ -313,6 +373,8 @@ final class ChatListModel: ObservableObject {
     @Published private(set) var lockedOpen = false
     @Published private(set) var loaded = false
     @Published private(set) var stopped: ChatStopped?
+    /// Asked when the old keys cannot open some chats (see `ChatSession.renewalChoice`); read from the session after each load and answer.
+    @Published private(set) var renewalChoice: ChatRenewalChoice?
 
     let session: ChatSession
 
@@ -344,6 +406,7 @@ final class ChatListModel: ObservableObject {
             lockedOpen = open
             rooms = got.answer.rooms
             loaded = true
+            renewalChoice = session.renewalChoice
         } catch is ChatStale {
             return
         } catch {
@@ -352,6 +415,17 @@ final class ChatListModel: ObservableObject {
             stopped = ChatStopWords.make(doing: ChatStopWords.loadingList, error: error)
             if let f = error as? ChatAPI.Failure, f == .locked { closeLocked() }
         }
+    }
+
+    /// The person's answer to `renewalChoice`: move on and leave those chats closed, or keep things as they are.
+    func acceptRenewalLoss() async {
+        await session.acceptRenewalLoss()
+        renewalChoice = session.renewalChoice
+    }
+
+    func declineRenewalLoss() {
+        session.declineRenewalLoss()
+        renewalChoice = session.renewalChoice
     }
 
     /// Locked closes (the app went to the background, or Aero said Locked): its rows go at once, before anything is asked, and are not kept;
@@ -395,6 +469,7 @@ final class ChatRoomModel: ObservableObject {
     private var members: [ChatMember] = []
     private var wire: [Int: ChatWireMessage] = [:]
     private var devices: [String: [ChatDeviceInfo]] = [:]
+    private var pastDevices: [String: [ChatDeviceInfo]] = [:]
     private var holders: [String: String] = [:]
     private var writing: [ChatWriting] = []
     private var lastSeq = 0
@@ -466,6 +541,7 @@ final class ChatRoomModel: ObservableObject {
         epoch = answer.epoch
         members = answer.members
         for (name, list) in answer.devices { devices[name] = list }
+        for (name, list) in answer.pastDevices ?? [:] { pastDevices[name] = list }
         holders = answer.holders ?? holders
         for m in answer.messages { wire[m.seq] = m; lastSeq = max(lastSeq, m.seq) }
         session.openKeys(answer, device: device)
@@ -491,7 +567,7 @@ final class ChatRoomModel: ObservableObject {
             waitForKeys(id, t)
             return
         }
-        let entries = ordered.map { ChatOpener.entry($0, room: id, keys: session.keys, devices: devices, holders: holders, locked: locked) }
+        let entries = ordered.map { ChatOpener.entry($0, room: id, keys: session.keys, devices: devices, past: pastDevices, holders: holders, locked: locked) }
         lines = ChatTranscript.lines(entries: entries, me: session.me, writing: writing, showSpeakers: showSpeakers, shown: shown(_:))
         phase = .ready
     }

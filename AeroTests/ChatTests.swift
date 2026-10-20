@@ -346,7 +346,8 @@ final class ChatTests: XCTestCase {
         let signed = ChatRenewalCheck.openedPart(room: "rabc", epoch: 0, person: fresh.person, device: fresh.id, sealHash: h, kc: proof.kc)
         XCTAssertTrue(ChatCrypto.verify(signPublic: fresh.signPublic, sig: proof.sig, signed: signed))
         XCTAssertFalse(ChatCrypto.verify(signPublic: old.signPublic, sig: proof.sig, signed: signed))
-        let text = Data("chat-opened|rabc|0|\(fresh.person)|\(fresh.id)|\(h)".utf8)
+        // the value is the room key's alone (the same on every device that holds it), so Aero can compare two devices' claims
+        let text = Data("chat-opened|rabc|0".utf8)
         XCTAssertEqual(proof.kc, ChatBase64.encode(Data(HMAC<SHA256>.authenticationCode(for: text, using: key))))
     }
 
@@ -390,8 +391,47 @@ final class ChatTests: XCTestCase {
         var theirs = try held([("rabc", key)], to: old, by: pc)
         theirs.keys[0].ct = ChatBase64.encode(Data(repeating: 3, count: 48))
         let result = ChatRenewalCheck.prove(theirs: theirs, mine: try held([("rabc", key)], to: fresh, by: pc), old: old, fresh: fresh)
-        XCTAssertEqual(result.unopened, 1)
+        XCTAssertEqual(result.unopened, 0)
+        XCTAssertEqual(result.oldCannotOpen, 1)      // never proved, and waiting does not help: the person is asked (round 9)
         XCTAssertTrue(result.proofs.isEmpty)
+        XCTAssertTrue(result.oldProofs.isEmpty)
+    }
+
+    func testBothDevicesSignTheSameKeyValueForEveryKeyTheyBothOpen() throws {
+        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1")
+        let key = ChatCrypto.freshKey()
+        let theirs = try held([("rabc", key)], to: old, by: pc), mine = try held([("rabc", key)], to: fresh, by: pc)
+        let result = ChatRenewalCheck.prove(theirs: theirs, mine: mine, old: old, fresh: fresh)
+        XCTAssertEqual(result.proofs.count, 1)
+        XCTAssertEqual(result.oldProofs.count, 1)
+        XCTAssertEqual(result.proofs[0].kc, result.oldProofs[0].kc)
+        let oh = ChatRenewalCheck.sealHash(iv: theirs.keys[0].iv, ct: theirs.keys[0].ct)
+        let signed = ChatRenewalCheck.openedPart(room: "rabc", epoch: 0, person: old.person, device: old.id, sealHash: oh, kc: result.oldProofs[0].kc)
+        XCTAssertTrue(ChatCrypto.verify(signPublic: old.signPublic, sig: result.oldProofs[0].sig, signed: signed))
+    }
+
+    func testAnAnswerThatNothingIsCoveredCarriesWhatWouldStayClosedAndTheAck() {
+        let said = ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true,"holds":{"rooms":2,"epochs":3},"ack":"abc","error":"The new device can't open everything yet."}"#.utf8))
+        XCTAssertEqual(said, .notCovered(rooms: 2, ack: "abc"))
+        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true}"#.utf8)), .notCovered(rooms: 0, ack: ""))
+    }
+
+    func testTheWordsForLettingChatsStayClosedAreGentleAndSayWhatEachKeyDoes() {
+        XCTAssertTrue(ChatWords.renewalChoice(1).contains("1 older chat"))
+        XCTAssertTrue(ChatWords.renewalChoice(3).contains("3 older chats"))
+        for words in [ChatWords.renewalChoice(1), ChatWords.renewalChoice(2), ChatWords.renewalMoveOn, ChatWords.renewalKeep, ChatWords.renewalDeclined] {
+            XCTAssertFalse(words.unicodeScalars.contains { $0.properties.isEmojiPresentation })
+        }
+    }
+
+    func testAMessageARemovedDeviceSignedStillChecks() throws {
+        let removed = Self.soft("p1"), key = ChatCrypto.freshKey()
+        let m = try wire(1, sender: "owner", from: removed, key: key, text: "hello")
+        let past = ["p1": [ChatDeviceInfo(device: removed.id, ecdh: removed.ecdhPublic, sign: removed.signPublic)]]
+        let gone = ChatOpener.entry(m, room: "rabc", keys: ["rabc|0": key], devices: ["owner": []], holders: [:], locked: false)
+        let known = ChatOpener.entry(m, room: "rabc", keys: ["rabc|0": key], devices: ["owner": []], past: ["owner": past["p1"]!], holders: [:], locked: false)
+        XCTAssertNotNil(gone.unreadable)
+        XCTAssertEqual(known.text, "hello")
     }
 
     func testNoWordOfChatHasAnEmoji() {
