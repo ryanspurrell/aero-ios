@@ -66,6 +66,9 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(ChatOpener.signer(of: ai, locked: false, devices: ["@fingoid": [info("dev9")]], holders: [:]), "@fingoid")
         XCTAssertEqual(ChatOpener.signer(of: ai, locked: true, devices: ["owner": [info("dev9", priv: true)]], holders: [:]), "owner")
         XCTAssertEqual(ChatOpener.signer(of: ai, locked: false, devices: ["owner": [info("dev9", priv: true)]], holders: [:]), "@pc")
+        // round 10: a Locked device removed since is still the signer (its keys come as past devices, with the mark)
+        XCTAssertEqual(ChatOpener.signer(of: ai, locked: true, devices: ["owner": []], past: ["owner": [info("dev9", priv: true)]], holders: [:]), "owner")
+        XCTAssertEqual(ChatOpener.signer(of: ai, locked: true, devices: [:], past: ["owner": [info("dev9", priv: false)]], holders: [:]), "@pc")
         let addon = ChatWireMessage(seq: 2, kind: "addon", sender: "council", senderID: nil, device: "d", at: nil, epoch: 0, iv: "", ct: "", sig: "", note: nil)
         XCTAssertEqual(ChatOpener.signer(of: addon, locked: false, devices: [:], holders: ["council": "@council"]), "@council")
     }

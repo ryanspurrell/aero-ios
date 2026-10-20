@@ -15,11 +15,12 @@ struct ChatStale: Error {}
 enum ChatOpener {
     /// Whose device signed this message, as a key of the answer's `devices`: an AI's message by this PC's device (or Fingoid's; in a Locked
     /// chat once by a private device of one of its people), an add-on's by its holder's, a person's by their own.
-    static func signer(of m: ChatWireMessage, locked: Bool, devices: [String: [ChatDeviceInfo]], holders: [String: String]) -> String {
+    static func signer(of m: ChatWireMessage, locked: Bool, devices: [String: [ChatDeviceInfo]], past: [String: [ChatDeviceInfo]] = [:], holders: [String: String]) -> String {
         switch m.kind {
         case "model":
-            if locked, let person = devices.keys.sorted().first(where: { name in
-                !name.hasPrefix("@") && (devices[name] ?? []).contains { $0.device == m.device && ($0.isPrivate ?? false) }
+            // (a private device removed since still counts: its keys come in `past`, with the same mark)
+            if locked, let person = Set(devices.keys).union(past.keys).sorted().first(where: { name in
+                !name.hasPrefix("@") && ((devices[name] ?? []) + (past[name] ?? [])).contains { $0.device == m.device && ($0.isPrivate ?? false) }
             }) { return person }
             if (devices["@fingoid"] ?? []).contains(where: { $0.device == m.device }) { return "@fingoid" }
             return "@pc"
@@ -41,7 +42,7 @@ enum ChatOpener {
         if m.kind == "note" { return plain(nil) }
         guard let epoch = m.epoch, let iv = m.iv, let ct = m.ct, let sig = m.sig, let device = m.device else { return plain(notOpened) }
         guard let key = keys["\(room)|\(epoch)"] else { return plain(beforeYouJoined) }
-        let owner = signer(of: m, locked: locked, devices: devices, holders: holders)
+        let owner = signer(of: m, locked: locked, devices: devices, past: past, holders: holders)
         // the devices there are now, then those removed since: a message a removed device signed still checks
         let signPublic = ((devices[owner] ?? []) + (past[owner] ?? [])).first(where: { $0.device == device })?.sign ?? ""
         do {
