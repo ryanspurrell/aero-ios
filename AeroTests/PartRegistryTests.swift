@@ -76,8 +76,8 @@ final class PartRegistryTests: XCTestCase {
     }
 
     func testWithNoListFromCoreThePhoneOffersItsOwnPartsAndCoreAddsTheRest() throws {
-        XCTAssertEqual(PartCatalog.merged(core: nil).map(\.id), ["organizer", "messages"])
+        XCTAssertEqual(PartCatalog.merged(core: nil).map(\.id), ["organizer", "messages", "location"])
         let core = try XCTUnwrap(PartCatalog.decodeCore(Data(lookJSON.utf8)))
-        XCTAssertEqual(PartCatalog.merged(core: core).map(\.id), ["organizer", "messages", "boards", "photos"])
+        XCTAssertEqual(PartCatalog.merged(core: core).map(\.id), ["organizer", "messages", "location", "boards", "photos"])
     }
 }

@@ -26,6 +26,13 @@ settings:
     # signing off, and the upload job passes the team on the command line.
     CODE_SIGN_STYLE: Automatic
 
+# MapLibre Native for iOS (BSD-2-Clause), as a binary Swift package: draws the Location map. Its licence is at
+# https://github.com/maplibre/maplibre-native/blob/main/LICENSE.md ; the version is fixed, not "latest".
+packages:
+  MapLibre:
+    url: https://github.com/maplibre/maplibre-gl-native-distribution
+    exactVersion: 6.31.0
+
 targets:
   Aero:
     type: application
@@ -60,6 +67,8 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: "NO"
         ENABLE_BITCODE: "NO"
     dependencies:
+      - package: MapLibre
+        product: MapLibre
       # CPython for iOS (PEP 730), fetched by tools/prepare_python.sh before the project is generated.
       - framework: Python.xcframework
         embed: true

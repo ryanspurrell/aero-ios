@@ -22,6 +22,8 @@ enum PartNeed: String, Equatable {
 /// The root view a part opens to, chosen among those compiled into this build.
 enum PartRoot: String, Equatable {
     case organizer, chat
+    /// Location, read-only: the map from the PC's own tiles (Aero/Native/Maps).
+    case maps
     /// No native view yet: the server's page, in the web view.
     case web
 }
@@ -48,6 +50,8 @@ enum PartCatalog {
     static let own: [PartInfo] = [
         PartInfo(id: "organizer", name: "Organizer", icon: "check", colourHex: "#dfe35a", needs: .phoneOk, root: .organizer),
         PartInfo(id: "messages", name: "Chats", icon: "chat", colourHex: "#9ee0c0", needs: .pcOnly, root: .chat),
+        // The map's squares, letters and symbols come from the PC (Core's sky #a9d4f0); with none, the chooser says "Needs your PC".
+        PartInfo(id: "location", name: "Location", icon: "place", colourHex: "#a9d4f0", needs: .pcOnly, root: .maps),
     ]
 
     /// What `/look.json` serves under "parts": {id: {name, icon, colour, hex, privacy, group?}}. Home's own entries (Needs you, Check-in) carry no
