@@ -183,7 +183,6 @@ enum PhotosWords {
     static let locked = "These photos are Locked."
     static let unlock = "Unlock in Aero"
     static let signIn = "Sign in to Aero to see photos."
-    static let findOutWhy = "Find out why"
     static let tryAgain = "Try again"
     static let empty = "No photos yet"
     static let noAlbums = "No albums yet"

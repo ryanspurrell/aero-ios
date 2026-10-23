@@ -44,11 +44,10 @@ struct PhotoPicture: View {
     }
 }
 
-/// A line that says what happened and offers the next step: Try again, and Find out why.
+/// A line that says what happened and offers the next step: Try again, and (with a PC to ask) Doctor's Find out why.
 struct PhotosProblem: View {
     let phase: PhotosPhase
     var retry: () -> Void
-    var findOutWhy: () -> Void
     var unlock: () -> Void
 
     var body: some View {
@@ -62,13 +61,7 @@ struct PhotosProblem: View {
                 pill(PhotosWords.openInAero, unlock)
             default:
                 Text(PhotosWords.couldntLoad).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
-                HStack(spacing: Look.Space.snug) {
-                    pill(PhotosWords.tryAgain, retry)
-                    Button(action: findOutWhy) {
-                        Text(PhotosWords.findOutWhy).fx(Look.Size.tab, style: .subheadline).foregroundStyle(Look.Palette.soft)
-                            .underline().frame(minHeight: Look.Space.sizeTap)
-                    }
-                }
+                FailureKeys(tryAgain: PhotosWords.tryAgain, diagnosis: "pc_unreachable", retry: retry)
             }
         }
         .multilineTextAlignment(.center)
@@ -174,7 +167,6 @@ struct PhotosGridPage: View {
     let openID: String?
     var open: (PhotoItem) -> Void
     var retry: () -> Void
-    var findOutWhy: () -> Void
     var unlock: () -> Void
     /// Where Back returns to: scrolled to when the token changes.
     let spot: String?
@@ -215,7 +207,7 @@ struct PhotosGridPage: View {
                 }
             }
         default:
-            PhotosProblem(phase: model.phase, retry: retry, findOutWhy: findOutWhy, unlock: unlock)
+            PhotosProblem(phase: model.phase, retry: retry, unlock: unlock)
         }
     }
 
@@ -283,7 +275,6 @@ struct PhotosAlbumsPage: View {
     let images: PhotoImages
     var open: (PhotoAlbum) -> Void
     var retry: () -> Void
-    var findOutWhy: () -> Void
     var unlock: () -> Void
 
     private let columns = [GridItem(.flexible(), spacing: Look.Space.snug), GridItem(.flexible(), spacing: Look.Space.snug)]
@@ -322,7 +313,7 @@ struct PhotosAlbumsPage: View {
                 }
             }
         default:
-            PhotosProblem(phase: model.phase, retry: retry, findOutWhy: findOutWhy, unlock: unlock)
+            PhotosProblem(phase: model.phase, retry: retry, unlock: unlock)
         }
     }
 }
@@ -512,6 +503,7 @@ struct PhotosScreen: View {
                     }
                     .accessibilityLabel("Back to " + (walk.isAtTab ? PhotosWords.home : walk.crumbs[walk.crumbs.count - 2]))
                     Spacer()
+                    ConnectionIsland()
                 }
                 .padding(.horizontal, Look.Space.gutter)
                 PhotosHeader(part: part, crumbs: walk.crumbs, tap: tapped)
@@ -559,7 +551,7 @@ struct PhotosScreen: View {
         ZStack {
             switch walk.places.first ?? .library {
             case .albums:
-                PhotosAlbumsPage(model: albums, images: images, open: openAlbum, retry: { Task { await albums.load() } }, findOutWhy: openWeb, unlock: openWeb)
+                PhotosAlbumsPage(model: albums, images: images, open: openAlbum, retry: { Task { await albums.load() } }, unlock: openWeb)
             default:
                 grid(library)
             }
@@ -571,7 +563,7 @@ struct PhotosScreen: View {
 
     private func grid(_ model: PhotosMonthsModel) -> some View {
         PhotosGridPage(model: model, images: images, namespace: grow, openID: openPhoto, open: { item in openItem(item) },
-                       retry: { Task { await model.load() } }, findOutWhy: openWeb, unlock: openWeb, spot: spot, spotToken: spotToken)
+                       retry: { Task { await model.load() } }, unlock: openWeb, spot: spot, spotToken: spotToken)
     }
 
     // MARK: moving

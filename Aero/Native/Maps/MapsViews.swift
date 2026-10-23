@@ -37,7 +37,7 @@ struct MapsScreen: View {
             case .needsPC:
                 MapsMessagePage(title: "Location", message: MapsText.needsPC, key: ChatWords.connectPC, back: back, action: connect)
             case .failed(let words):
-                MapsMessagePage(title: "Location", message: words, key: "Try again", back: back, action: { Task { await store.load() } })
+                MapsMessagePage(title: "Location", message: words, key: "Try again", diagnosis: "pc_unreachable", back: back, action: { Task { await store.load() } })
             case .loading:
                 MapsMessagePage(title: "Location", message: nil, key: nil, back: back, action: {})
             case .ready:
@@ -107,6 +107,7 @@ struct MapsScreen: View {
             .buttonStyle(BubblePressStyle())
             .accessibilityLabel("Back to Home")
             Spacer()
+            ConnectionIsland()
             VStack(spacing: Look.Space.tight) {
                 round("location", "Where you are") { store.lookHere() }
                 round("point.topleft.down.to.point.bottomright.curvepath", "The whole day") { store.lookDay() }
@@ -217,6 +218,7 @@ struct MapsScreen: View {
         }
         if let failed = store.dayFailure {
             Text(failed).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
+            FindOutWhyKey(diagnosis: "pc_unreachable")
         }
         let rows = store.day.map { MapsText.timelineRows($0, places: store.overview?.places ?? []) } ?? []
         if rows.isEmpty {
@@ -281,6 +283,8 @@ struct MapsMessagePage: View {
     let title: String
     let message: String?
     let key: String?
+    /// Doctor's id for this failure, for the Find out why key; nil where nothing failed.
+    var diagnosis: String?
     var back: () -> Void
     var action: () -> Void
 
@@ -296,6 +300,7 @@ struct MapsMessagePage: View {
                 }
                 .accessibilityLabel("Back to Home")
                 Spacer()
+                ConnectionIsland()
             }
             .padding(.horizontal, Look.Space.gutter)
             VStack(spacing: Look.Space.snug) {
@@ -313,6 +318,7 @@ struct MapsMessagePage: View {
                     }
                     .buttonStyle(BubblePressStyle())
                 }
+                if let diagnosis { FindOutWhyKey(diagnosis: diagnosis) }
             }
             .padding(Look.Space.gutter)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
