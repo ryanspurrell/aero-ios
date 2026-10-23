@@ -150,6 +150,8 @@ struct PartPage: View {
             } else {
                 PhotosNeedsPCScreen(back: back, connect: openWeb)
             }
+        case .maps:
+            MapsScreen(back: back, connect: openWeb)
         case .web:
             VStack(spacing: 0) {
                 HStack {
