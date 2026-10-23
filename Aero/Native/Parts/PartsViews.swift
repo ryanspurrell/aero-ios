@@ -144,6 +144,12 @@ struct PartPage: View {
             } else {
                 ChatNeedsPCScreen(back: back, connect: openWeb)
             }
+        case .photos:
+            if hasPC {
+                PhotosScreen(part: part, back: back, openWeb: openWeb)
+            } else {
+                PhotosNeedsPCScreen(back: back, connect: openWeb)
+            }
         case .web:
             VStack(spacing: 0) {
                 HStack {

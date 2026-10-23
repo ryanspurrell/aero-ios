@@ -68,7 +68,7 @@ final class PartRegistryTests: XCTestCase {
         let core = try XCTUnwrap(PartCatalog.decodeCore(Data(lookJSON.utf8)))
         XCTAssertEqual(core.map(\.id), ["boards", "messages", "organizer", "photos"])       // sorted by name; Home's own "needs" is not a screen
         XCTAssertTrue(try XCTUnwrap(core.first { $0.id == "boards" }).locked)
-        XCTAssertEqual(try XCTUnwrap(core.first { $0.id == "photos" }).root, .web)
+        XCTAssertEqual(try XCTUnwrap(core.first { $0.id == "photos" }).root, .photos)
         XCTAssertEqual(try XCTUnwrap(core.first { $0.id == "photos" }).needs, .pcOnly)
         XCTAssertEqual(try XCTUnwrap(core.first { $0.id == "organizer" }).needs, .phoneOk)
         XCTAssertEqual(try XCTUnwrap(core.first { $0.id == "organizer" }).root, .organizer)
@@ -76,8 +76,8 @@ final class PartRegistryTests: XCTestCase {
     }
 
     func testWithNoListFromCoreThePhoneOffersItsOwnPartsAndCoreAddsTheRest() throws {
-        XCTAssertEqual(PartCatalog.merged(core: nil).map(\.id), ["organizer", "messages"])
+        XCTAssertEqual(PartCatalog.merged(core: nil).map(\.id), ["organizer", "messages", "photos"])
         let core = try XCTUnwrap(PartCatalog.decodeCore(Data(lookJSON.utf8)))
-        XCTAssertEqual(PartCatalog.merged(core: core).map(\.id), ["organizer", "messages", "boards", "photos"])
+        XCTAssertEqual(PartCatalog.merged(core: core).map(\.id), ["organizer", "messages", "photos", "boards"])
     }
 }
