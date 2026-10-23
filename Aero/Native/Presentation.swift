@@ -1,5 +1,6 @@
 import Foundation
 import CryptoKit
+import UIKit
 
 // How a Done or Skip was shown (Aryn, 2026-10-19: "an observation records how it was shown"): the pointers offered at that moment, each with its
 // kind, size and style as tokens (never pixels), its place and order, and which was the main one; and the reader's direction. The layout is kept
