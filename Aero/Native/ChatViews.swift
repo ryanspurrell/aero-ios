@@ -111,6 +111,7 @@ private struct ChatListPage: View {
                 }
                 .accessibilityLabel("Back to today")
                 Spacer()
+                ConnectionIsland()
                 Button(action: newChat) {
                     HStack(spacing: Look.Space.hair) {
                         Image(systemName: "plus").font(.system(size: 14, weight: .bold))
@@ -499,18 +500,21 @@ private struct ChatBubble: View {
 private struct ChatStoppedNote: View {
     let stopped: ChatStopped
     let key: () -> Void
+    @State private var asking = false
 
     var body: some View {
-        HStack(spacing: Look.Space.tight) {
+        VStack(alignment: .leading, spacing: Look.Space.tight) {
             Text(stopped.text).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
-            Spacer(minLength: 0)
-            Button(action: key) {
-                Text(stopped.key).fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
-                    .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
-                    .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent))
+            HStack(spacing: Look.Space.tight) {
+                FingusKey(title: stopped.key, action: key)
+                // Doctor is a part of the PC; Chat only runs with one, but the key follows the same rule as every failure line
+                if ConnectionStatus.whyOffered(hasAddress: AppInfo.address != nil) {
+                    FingusKey(title: "Find out why", prominent: false) { asking = true }
+                }
             }
-            .buttonStyle(BubblePressStyle())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sheet(isPresented: $asking) { FindOutWhySheet(failure: stopped.diagnosis) { asking = false } }
     }
 }
 

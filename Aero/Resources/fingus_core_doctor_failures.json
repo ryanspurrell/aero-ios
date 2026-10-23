@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "about": "What Doctor does when someone taps 'Find out why' on a failure line (Aryn, 2026-10-23, 4:30-4:31 am: 'yes'). The flow is proved in projects/foundations/FingusFoundations/FingusFoundations/Systems/FailureDiagnosis.lean: checks first, then at most one question, asked only when no check settles it, always with Not sure; the step shown depends only on the check results and the answer. 'runs' says who runs a check: 'device' the app on the person's phone or PC screen (it works when the PC does not answer), 'pc' Doctor on the PC. 'kind' is the audit's reading of the failure by its code path (projects/aero/audit__wording_2026-10-23.md): retry (the same action can succeed again), cause (something outside the action can be fixed), nothing (nothing the person can do).",
+  "match": [
+    {"id": "pc_unreachable", "re": "^Couldn't (reach|ask your PC)"},
+    {"id": "copy", "re": "^Couldn't copy"},
+    {"id": "device_permission", "re": "^Couldn't (open|use) the (microphone|camera)|microphone"},
+    {"id": "play", "re": "^Couldn't (play|speak|hear)"},
+    {"id": "network", "re": "^Couldn't (load|save|open|change|stop|start|move|add|make|get|set|remember|show|join|share|keep|send|sign out|summarise|connect|disconnect|search|read|give|fetch|list|write|forget|rewind|compact|record|let|delete|do|finish|run|create|find|put|take|turn)"},
+    {"id": "other", "re": "^(Couldn't|That didn't)"}
+  ],
+  "checks": {
+    "device_online": {"runs": "device", "says": "This device is online"},
+    "pc_answers": {"runs": "device", "says": "Your PC answers"},
+    "core_answers": {"runs": "pc", "says": "Fingus Core answers"},
+    "doctor_findings": {"runs": "pc", "says": "Doctor has nothing waiting"}
+  },
+  "failures": {
+    "pc_unreachable": {
+      "kind": "cause",
+      "checks": ["device_online", "pc_answers", "core_answers", "doctor_findings"],
+      "ask": {"id": "pc_on", "text": "Is your PC on?", "settledBy": "pc_answers"},
+      "steps": {
+        "cause": {
+          "device_online": "This device is offline. Connect it to the internet.",
+          "pc_answers": "Your PC isn't answering. Check it's on and online.",
+          "core_answers": "Fingus Core isn't answering. Restart your PC.",
+          "doctor_findings": "Doctor has a problem waiting. Open System health."
+        },
+        "answered": {"pc_on": {"yes": "Your PC is on but not answering. Check its internet connection.", "no": "Turn your PC on."}},
+        "stillOpen": {"pc_on": "Not sure is saved. Check whether your PC is on."},
+        "allHold": "Everything checks out now. Do it again.",
+        "noChecks": "Doctor has no checks for this yet."
+      }
+    },
+    "network": {
+      "kind": "retry",
+      "checks": ["device_online", "pc_answers", "core_answers", "doctor_findings"],
+      "ask": null,
+      "steps": {
+        "cause": {
+          "device_online": "This device is offline. Connect it to the internet.",
+          "pc_answers": "Your PC isn't answering. Check it's on and online.",
+          "core_answers": "Fingus Core isn't answering. Restart your PC.",
+          "doctor_findings": "Doctor has a problem waiting. Open System health."
+        },
+        "answered": {},
+        "stillOpen": {},
+        "allHold": "Everything checks out now. Do it again.",
+        "noChecks": "Doctor has no checks for this yet."
+      }
+    },
+    "copy": {"kind": "retry", "checks": [], "ask": null,
+      "steps": {"cause": {}, "answered": {}, "stillOpen": {}, "allHold": "", "noChecks": "Doctor has no checks for this yet."}},
+    "play": {"kind": "retry", "checks": [], "ask": null,
+      "steps": {"cause": {}, "answered": {}, "stillOpen": {}, "allHold": "", "noChecks": "Doctor has no checks for this yet."}},
+    "device_permission": {"kind": "cause", "checks": [], "ask": null,
+      "steps": {"cause": {}, "answered": {}, "stillOpen": {}, "allHold": "", "noChecks": "Doctor has no checks for this yet."}},
+    "other": {"kind": "nothing", "checks": [], "ask": null,
+      "steps": {"cause": {}, "answered": {}, "stillOpen": {}, "allHold": "", "noChecks": "Doctor has no checks for this yet."}}
+  }
+}

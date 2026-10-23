@@ -87,6 +87,7 @@ struct OrganizerHomeScreen: View {
             }
         } else if let failure = store.failure {
             Text(failure).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
+            FailureKeys(tryAgain: "Try again", diagnosis: store.failureDiagnosis) { Task { await store.load() } }
         } else {
             ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
         }

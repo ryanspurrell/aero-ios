@@ -65,9 +65,17 @@ final class PhoneOrganizer: OrganizerBackend {
     // MARK: the day
 
     func calendar(span: CalendarSpan, date: String) async throws -> CalendarAnswer {
-        let book = try store.book()
-        return try await reader.decode("calendar", ["records": recordsJSON(book), "span": .string(span.rawValue), "date": .string(date), "now": .string(nowText())],
-                                       as: CalendarAnswer.self)
+        do {
+            let book = try store.book()
+            let got = try await reader.decode("calendar", ["records": recordsJSON(book), "span": .string(span.rawValue), "date": .string(date), "now": .string(nowText())],
+                                              as: CalendarAnswer.self)
+            await ConnectionMonitor.shared.sawOwn(.reached, backend: .phone)
+            return got
+        } catch {
+            // the phone's own records did not open: the island says so (ConnectionStatus)
+            await ConnectionMonitor.shared.sawOwn(.refused, backend: .phone)
+            throw error
+        }
     }
 
     func helperNames() async -> [String] { [] }

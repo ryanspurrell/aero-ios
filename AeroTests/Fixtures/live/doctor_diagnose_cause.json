@@ -1,0 +1,13 @@
+{
+ "check": "doctor_findings",
+ "checks": {
+  "core_answers": "holds",
+  "device_online": "holds",
+  "doctor_findings": "fails",
+  "pc_answers": "holds"
+ },
+ "failure": "pc_unreachable",
+ "kind": "cause",
+ "open": [],
+ "text": "Doctor has a problem waiting. Open System health."
+}

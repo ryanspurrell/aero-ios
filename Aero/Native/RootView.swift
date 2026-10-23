@@ -102,6 +102,8 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)) { _ in
             hasAddress = AppInfo.address != nil
             addressText = AppInfo.address?.absoluteString ?? ""
+            // only a different address starts a new reading of the connection
+            ConnectionMonitor.shared.placeChanged()
         }
     }
 }

@@ -1,0 +1,41 @@
+{
+ "me": "owner",
+ "me_id": "sub-invented-0001",
+ "my_names": {},
+ "owner": "Aryn",
+ "profiles": {},
+ "rooms": [
+  {
+   "ai": true,
+   "answers": "aero",
+   "board": "",
+   "direct": false,
+   "epoch": 0,
+   "id": "r0123456789abcdef",
+   "last": 3,
+   "lead": null,
+   "manager": "",
+   "members": [
+    {
+     "kind": "person",
+     "name": "owner",
+     "nick": null
+    },
+    {
+     "kind": "model",
+     "name": "fingus",
+     "nick": null
+    }
+   ],
+   "name": null,
+   "parent": null,
+   "pinned": false,
+   "private": false,
+   "project": "",
+   "shape": null,
+   "sub": null,
+   "touched": 1792756981.43113,
+   "unread": 1
+  }
+ ]
+}

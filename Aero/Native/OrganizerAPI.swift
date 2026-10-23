@@ -11,13 +11,21 @@ import WebKit
 final class OrganizerAPI: OrganizerBackend {
     var kind: BackendKind { .pc }
 
-    enum Failure: LocalizedError {
+    enum Failure: LocalizedError, Equatable {
         case noAddress, notSignedIn, server(String)
+        /// No answer came: the connection failed or timed out.
+        case notReached
+        /// Something answered that is not Aero's own word: the status is 5xx with no JSON error (the tunnel or the edge with nothing behind it).
+        case status(Int)
+        /// Aero answered 200 with something this app cannot read as the answer it asked for.
+        case unreadable
         var errorDescription: String? {
             switch self {
             case .noAddress: return "No address is set."
             case .notSignedIn: return "Sign in first."
             case .server(let words): return words
+            case .notReached, .status: return "Your PC didn't answer."
+            case .unreadable: return "Your PC's answer couldn't be read."
             }
         }
     }
@@ -48,10 +56,20 @@ final class OrganizerAPI: OrganizerBackend {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(["name": JSONValue.string(name), "args": JSONValue.object(args)])
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, http.statusCode == 401 || http.statusCode == 403 { throw Failure.notSignedIn }
+        let result: (Data, URLResponse)
+        do { result = try await session.data(for: request) }
+        catch {
+            await ConnectionMonitor.shared.sawOwn(.refused, backend: .pc)
+            throw Failure.notReached
+        }
+        let (data, response) = result
+        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        // any answer below 500 is Aero's (a refusal to sign in too); 5xx with nothing of Aero's in it is the way to it saying nothing
+        await ConnectionMonitor.shared.sawOwn(code > 0 && code < 500 ? .reached : .refused, backend: .pc)
+        if code == 401 || code == 403 { throw Failure.notSignedIn }
         if let said = try? decoder.decode(ErrorAnswer.self, from: data), let words = said.error { throw Failure.server(words) }
-        return try decoder.decode(Answer.self, from: data)
+        if code >= 500 { throw Failure.status(code) }
+        do { return try decoder.decode(Answer.self, from: data) } catch { throw Failure.unreadable }
     }
 
     /// A change that answers with nothing the app needs (a question's choice, Done).

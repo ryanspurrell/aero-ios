@@ -6,6 +6,8 @@ import SwiftUI
 final class OrganizerDayStore: ObservableObject {
     @Published private(set) var answer: CalendarAnswer?
     @Published private(set) var failure: String?
+    /// Doctor's id of the kind of failure the line is about, for Find out why.
+    @Published private(set) var failureDiagnosis = "other"
     @Published var span: CalendarSpan = .day
     /// "YYYY-MM-DD"; empty is today (Organizer says which day that is).
     @Published private(set) var date: String = ""
@@ -51,7 +53,9 @@ final class OrganizerDayStore: ObservableObject {
             failure = nil
         } catch {
             // the one shape: what was being done, which step stopped (the key under it says what can be done now)
-            failure = "Showing your day stopped at reading your records."
+            let line = StopWords.line(doing: "Showing your day", backend: api.kind, error: error)
+            failure = line.text
+            failureDiagnosis = line.diagnosis
         }
         lists = try? await api.lists()
         if answer?.mode == .simple { helpers = await api.helperNames() }
@@ -87,7 +91,7 @@ final class OrganizerDayStore: ObservableObject {
     /// A question's choice: the answer is recorded where it was given and stays on screen (the view keeps the chosen one marked); the
     /// day is read again only on a later load.
     func choose(_ choice: QuestionChoice) async -> Bool {
-        do { try await api.apply(choice.answer); return true } catch { failure = error.localizedDescription; return false }
+        do { try await api.apply(choice.answer); return true } catch { fail("Saving your answer", error); return false }
     }
 
     func setDone(_ id: String, done: Bool, occurrence: String? = nil, presented: JSONValue? = nil, rev: String? = nil) async -> Bool {
@@ -96,7 +100,7 @@ final class OrganizerDayStore: ObservableObject {
         if done, let occurrence, !occurrence.isEmpty { args["occurrence"] = .string(occurrence) }
         if done, let presented { args["presented"] = presented }
         do { try await api.send(done ? "complete" : "reopen", args); return true }
-        catch { failure = error.localizedDescription; return false }
+        catch { fail(done ? "Marking it done" : "Reopening it", error); return false }
     }
 
     /// Skip: records that she skipped it, dated; nothing is deleted and it can be done after (both are then kept and shown as both).
@@ -106,10 +110,17 @@ final class OrganizerDayStore: ObservableObject {
         if let occurrence, !occurrence.isEmpty { args["occurrence"] = .string(occurrence) }
         if let presented { args["presented"] = presented }
         do { try await api.send("skip", args); return true }
-        catch { failure = error.localizedDescription; return false }
+        catch { fail("Skipping it", error); return false }
     }
 
     func askForHelp() async -> Bool {
-        do { try await api.send("help_ask"); return true } catch { failure = error.localizedDescription; return false }
+        do { try await api.send("help_ask"); return true } catch { fail("Asking for help", error); return false }
+    }
+
+    /// A change that stopped, in the one shape (it used to show the error's own words, which for a decode were not words at all).
+    private func fail(_ doing: String, _ error: Error) {
+        let line = StopWords.line(doing: doing, backend: api.kind, error: error)
+        failure = line.text
+        failureDiagnosis = line.diagnosis
     }
 }
