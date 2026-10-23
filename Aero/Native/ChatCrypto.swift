@@ -62,12 +62,19 @@ struct ChatDevice {
     let agree: (P256.KeyAgreement.PublicKey) throws -> SharedSecret
     let signRaw: (Data) throws -> Data
     private let keptData: () throws -> Data
+    /// Raw keys kept in the Keychain (made by an earlier build, or where there is no Secure Enclave), not Secure Enclave keys.
+    let isSoftware: Bool
 
     init(person: String, id: String, ecdhPublic: String, signPublic: String,
-         agree: @escaping (P256.KeyAgreement.PublicKey) throws -> SharedSecret, signRaw: @escaping (Data) throws -> Data, kept: @escaping () throws -> Data) {
+         agree: @escaping (P256.KeyAgreement.PublicKey) throws -> SharedSecret, signRaw: @escaping (Data) throws -> Data, kept: @escaping () throws -> Data,
+         isSoftware: Bool = false) {
         self.person = person; self.id = id; self.ecdhPublic = ecdhPublic; self.signPublic = signPublic
-        self.agree = agree; self.signRaw = signRaw; self.keptData = kept
+        self.agree = agree; self.signRaw = signRaw; self.keptData = kept; self.isSoftware = isSoftware
     }
+
+    /// A device made by an earlier build with raw keys, on a phone that has a Secure Enclave: it keeps working as it is, and is moved to
+    /// the Secure Enclave only by `ChatSession` when that loses nothing (see `ChatSession.renewIfSafe`).
+    var canMoveToEnclave: Bool { isSoftware && SecureEnclave.isAvailable }
 
     /// What is kept on the phone: the id and an opaque or raw form of each key, tagged with which.
     private struct Kept: Codable { var v: Int; var id: String; var kind: String; var ecdh: String; var sign: String }
@@ -79,7 +86,8 @@ struct ChatDevice {
                    ecdhPublic: ChatBase64.encode(ecdh.publicKey.x963Representation), signPublic: ChatBase64.encode(sign.publicKey.x963Representation),
                    agree: { try ecdh.sharedSecretFromKeyAgreement(with: $0) },
                    signRaw: { try sign.signature(for: $0).rawRepresentation },
-                   kept: { try JSONEncoder().encode(Kept(v: 1, id: id, kind: "software", ecdh: ChatBase64.encode(ecdh.rawRepresentation), sign: ChatBase64.encode(sign.rawRepresentation))) })
+                   kept: { try JSONEncoder().encode(Kept(v: 1, id: id, kind: "software", ecdh: ChatBase64.encode(ecdh.rawRepresentation), sign: ChatBase64.encode(sign.rawRepresentation))) },
+                   isSoftware: true)
     }
 
     static func enclave(person: String, id: String, ecdh: SecureEnclave.P256.KeyAgreement.PrivateKey, sign: SecureEnclave.P256.Signing.PrivateKey) -> ChatDevice {
@@ -101,15 +109,13 @@ struct ChatDevice {
         return software(person: person, id: id, ecdh: P256.KeyAgreement.PrivateKey(), sign: P256.Signing.PrivateKey())
     }
 
-    /// What `restore` found.
+    /// What `restore` found: the device that was kept, which is used as it is (raw keys too, on a phone with a Secure Enclave: they are moved
+    /// to it only when that loses nothing, never by replacing them here).
     enum Restored {
         case device(ChatDevice)
-        /// A device kept by an earlier build (raw keys, no Secure Enclave) on a phone that has a Secure Enclave: it is to be replaced, not used.
-        case renew
     }
 
-    /// The device that was kept. Throws, and never returns a different one, when what is kept cannot be read as a device. Raw (software) keys
-    /// are used only where there is no Secure Enclave; where there is one they are reported as to be renewed.
+    /// The device that was kept. Throws, and never returns a different one, when what is kept cannot be read as a device.
     static func restore(person: String, from data: Data) throws -> Restored {
         struct Legacy: Codable { var id: String; var ecdh: String; var sign: String }
         var kind = "", id = "", ecdhText = "", signText = ""
@@ -124,7 +130,6 @@ struct ChatDevice {
         do {
             switch kind {
             case "software":
-                if SecureEnclave.isAvailable { return .renew }
                 return .device(software(person: person, id: id, ecdh: try P256.KeyAgreement.PrivateKey(rawRepresentation: e), sign: try P256.Signing.PrivateKey(rawRepresentation: s)))
             case "enclave":
                 return .device(enclave(person: person, id: id, ecdh: try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: e), sign: try SecureEnclave.P256.Signing.PrivateKey(dataRepresentation: s)))
@@ -349,6 +354,8 @@ enum ChatCrypto {
 protocol ChatKeyStore {
     func load(person: String) throws -> Data?
     func save(_ data: Data, person: String) throws
+    /// Nothing is kept for `person` any more (not an error if nothing was).
+    func forget(person: String) throws
 }
 
 struct KeychainChatKeyStore: ChatKeyStore {
@@ -372,6 +379,11 @@ struct KeychainChatKeyStore: ChatKeyStore {
         return data
     }
 
+    func forget(person: String) throws {
+        let status = SecItemDelete(query(person) as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw ChatKeyError.notSaved(status) }
+    }
+
     func save(_ data: Data, person: String) throws {
         var status = SecItemUpdate(query(person) as CFDictionary, [kSecValueData as String: data] as CFDictionary)
         if status == errSecItemNotFound {
@@ -389,25 +401,118 @@ final class MemoryChatKeyStore: ChatKeyStore {
     private var kept: [String: Data] = [:]
     func load(person: String) throws -> Data? { kept[person] }
     func save(_ data: Data, person: String) throws { kept[person] = data }
+    func forget(person: String) throws { kept[person] = nil }
+}
+
+/// The device made to take the place of an earlier build's (raw keys), kept apart under its own name beside the person's device until Aero says
+/// it can open everything the old one can and takes the old one out; never read as the person's device, and never used before then. It is
+/// kept (its private keys too) from the moment it is registered, because the chats it is to be given can only be opened with them.
+enum ChatNextDevice {
+    static func name(_ person: String) -> String { person + "#next" }
+
+    static func load(person: String, in store: ChatKeyStore) -> ChatDevice? {
+        guard let data = try? store.load(person: name(person)), case .device(let d)? = try? ChatDevice.restore(person: person, from: data) else { return nil }
+        return d
+    }
+
+    static func keep(_ device: ChatDevice, in store: ChatKeyStore) throws {
+        try store.save(try device.kept(), person: name(device.person))
+    }
+
+    static func clear(person: String, in store: ChatKeyStore) {
+        try? store.forget(person: name(person))
+    }
 }
 
 enum ChatDeviceKeeper {
-    /// This phone's device for `person`, and whether it was just renewed. The one kept; or, only when nothing at all is kept, a new one made and
-    /// kept before it is used; or, when an earlier build kept raw keys on a phone that has a Secure Enclave, a new Secure Enclave device kept in
-    /// its place (`renewed`, which the person is told, and which is registered like any new device). A failed read or a kept device that
-    /// cannot be read throws; it is never replaced.
-    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> (device: ChatDevice, renewed: Bool) {
+    /// This phone's device for `person`: the one kept, or, only when nothing at all is kept, a new one made and kept before it is used. A
+    /// failed read or a kept device that cannot be read throws; it is never replaced. A device made by an earlier build (raw keys) is
+    /// kept as it is even where there is a Secure Enclave: replacing it here would leave the chats only it could open closed for good.
+    static func device(for person: String, in store: ChatKeyStore = KeychainChatKeyStore()) throws -> ChatDevice {
         if let data = try store.load(person: person) {
             switch try ChatDevice.restore(person: person, from: data) {
-            case .device(let d): return (d, false)
-            case .renew:
-                let made = try ChatDevice.make(person: person)
-                try store.save(try made.kept(), person: person)
-                return (made, true)
+            case .device(let d): return d
             }
         }
         let made = try ChatDevice.make(person: person)
         try store.save(try made.kept(), person: person)
-        return (made, false)
+        return made
     }
+
+    /// Keep `fresh` in the place of `old`, which is the one step that discards the old keys. Called only after Aero has taken the old
+    /// device out of the person's list, which it does (in one step with its check) only when `fresh` has proved it opened its seal of every key
+    /// the old one holds (`ChatRenewalCheck`); never before: until then the old keys are the only way to open what it holds. A failed save throws and leaves the old
+    /// keys kept. The noted next device is cleared once `fresh` is the one kept.
+    static func replace(_ old: ChatDevice, with fresh: ChatDevice, in store: ChatKeyStore) throws {
+        try store.save(try fresh.kept(), person: old.person)
+        ChatNextDevice.clear(person: old.person, in: store)
+    }
+
+    /// Aero says this phone's device was removed from the person's list and it still has its keys: it is not taken back as it was. It starts
+    /// again with the device noted for the move to the Secure Enclave if there is one, else a new one, kept in the place of the old.
+    static func startAgain(for person: String, in store: ChatKeyStore) throws -> ChatDevice {
+        let next = try ChatNextDevice.load(person: person, in: store) ?? ChatDevice.make(person: person)
+        try store.save(try next.kept(), person: person)
+        ChatNextDevice.clear(person: person, in: store)
+        return next
+    }
+}
+
+
+/// Before the old device is taken out for a new one, whether the new one can really open what the old one can, and saying so to Aero.
+/// Aero holds the seals but cannot open them, so a row proves nothing; this opens each one here, for EVERY room and epoch the old device
+/// holds (asked of `devices/keys.json`, which lists them whether or not the room is shown), and makes the signed proof Aero requires
+/// before it removes the old device.
+enum ChatRenewalCheck {
+    /// What the new device signs to say it opened its seal for (room, epoch), the same text as the store's `opened_part`:
+    /// "chat-opened|room|epoch|person|device|sealhash|kc", where `sealhash` is the hex SHA-256 of "iv|ct" of the seal as stored.
+    static func openedPart(room: String, epoch: Int, person: String, device: String, sealHash: String, kc: String) -> Data {
+        Data("chat-opened|\(room)|\(epoch)|\(person)|\(device)|\(sealHash)|\(kc)".utf8)
+    }
+
+    static func sealHash(iv: String, ct: String) -> String {
+        SHA256.hash(data: Data("\(iv)|\(ct)".utf8)).map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// The value only the room key makes, the same for every device that holds the key: HMAC-SHA256 of "chat-opened|room|epoch", keyed by it.
+    /// Aero cannot open a seal, so it takes a claim only when two devices of the person, each signing for its own seal, say the same `kc`.
+    static func keyCheck(room: String, epoch: Int, key: SymmetricKey) -> String {
+        ChatBase64.encode(Data(HMAC<SHA256>.authenticationCode(for: Data("chat-opened|\(room)|\(epoch)".utf8), using: key)))
+    }
+
+    /// For every key the old device holds: if the old device opens it, and the new device opens its own seal to the identical key, a signed
+    /// proof from EACH (`oldProofs` for the old device, `proofs` for the new). `unopened` counts the keys the old device opens that the new
+    /// does not (or to another key): those wait, since Aero or the PC may yet seal them right. `oldCannotOpen` counts the seals the old
+    /// device itself cannot open: no new device can be shown to open the same, so they are never proved, and are the person's to let go
+    /// (`ChatSession.acceptRenewalLoss`) rather than something to wait for.
+    static func prove(theirs: ChatHeldKeys, mine: ChatHeldKeys, old: ChatDevice, fresh: ChatDevice)
+        -> (proofs: [ChatOpenedProof], oldProofs: [ChatOpenedProof], unopened: Int, oldCannotOpen: Int) {
+        var proofs: [ChatOpenedProof] = []
+        var oldProofs: [ChatOpenedProof] = []
+        var bad = 0, cannot = 0
+        for held in theirs.keys {
+            guard let key = opened(held, in: theirs, by: old) else { cannot += 1; continue }
+            guard let seal = mine.keys.first(where: { $0.room == held.room && $0.epoch == held.epoch }),
+                  let got = opened(seal, in: mine, by: fresh), raw(got) == raw(key),
+                  let freshProof = signedProof(for: seal, key: got, by: fresh),
+                  let oldProof = signedProof(for: held, key: key, by: old) else { bad += 1; continue }
+            proofs.append(freshProof)
+            oldProofs.append(oldProof)
+        }
+        return (proofs, oldProofs, bad, cannot)
+    }
+
+    private static func signedProof(for seal: ChatHeldKey, key: SymmetricKey, by device: ChatDevice) -> ChatOpenedProof? {
+        let h = sealHash(iv: seal.iv, ct: seal.ct)
+        let kc = keyCheck(room: seal.room, epoch: seal.epoch, key: key)
+        guard let sig = try? device.signRaw(openedPart(room: seal.room, epoch: seal.epoch, person: device.person, device: device.id, sealHash: h, kc: kc)) else { return nil }
+        return ChatOpenedProof(room: seal.room, epoch: seal.epoch, kc: kc, sig: ChatBase64.encode(sig))
+    }
+
+    private static func opened(_ held: ChatHeldKey, in all: ChatHeldKeys, by device: ChatDevice) -> SymmetricKey? {
+        guard let sealer = (all.devices[held.byPerson] ?? []).first(where: { $0.device == held.byDevice }) else { return nil }
+        return try? ChatCrypto.unseal(room: held.room, seal: held.seal, sealerEcdh: sealer.ecdh, device: device)
+    }
+
+    private static func raw(_ key: SymmetricKey) -> Data { key.withUnsafeBytes { Data($0) } }
 }

@@ -130,6 +130,9 @@ private struct ChatListPage: View {
                     if let notice = model.renewedNotice {
                         Text(notice).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
                     }
+                    if let choice = model.renewalChoice {
+                        ChatRenewalChoiceNote(rooms: choice.rooms, accept: { Task { await model.acceptRenewalLoss() } }, decline: { model.declineRenewalLoss() })
+                    }
                     if let stopped = model.stopped {
                         ChatStoppedNote(stopped: stopped, key: { Task { await model.load() } })
                     }
@@ -507,6 +510,33 @@ private struct ChatStoppedNote: View {
                     .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent))
             }
             .buttonStyle(BubblePressStyle())
+        }
+    }
+}
+
+/// The old keys cannot open some chats, so they cannot be brought to the newer ones: said plainly, with two keys that each say what tapping does.
+/// Nothing is changed until the first is tapped.
+private struct ChatRenewalChoiceNote: View {
+    let rooms: Int
+    let accept: () -> Void
+    let decline: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Look.Space.tight) {
+            Text(ChatWords.renewalChoice(rooms)).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
+            HStack(spacing: Look.Space.tight) {
+                Button(action: decline) {
+                    Text(ChatWords.renewalKeep).fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
+                        .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
+                        .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent))
+                }
+                .buttonStyle(BubblePressStyle())
+                Button(action: accept) {
+                    Text(ChatWords.renewalMoveOn).fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.soft)
+                        .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
+                }
+                .buttonStyle(BubblePressStyle())
+            }
         }
     }
 }
