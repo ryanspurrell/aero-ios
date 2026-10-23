@@ -29,7 +29,7 @@ enum MapsStyle {
             "sources": ["tiles": ["type": "vector", "tiles": [base + "tiles/{z}/{x}/{y}.mvt"], "minzoom": 0, "maxzoom": 15]],
             "layers": layerList,
         ]
-        return try? JSONSerialization.data(withJSONObject: style)
+        return try? JSONSerialization.data(withJSONObject: style, options: [.withoutEscapingSlashes])
     }
 
     /// The bundled layers for a look.
