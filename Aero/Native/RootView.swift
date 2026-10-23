@@ -23,6 +23,12 @@ struct RootView: View {
     @State private var addressText = AppInfo.address?.absoluteString ?? ""
     @State private var ready = !DemoMode.isOn
     @Environment(\.scenePhase) private var scenePhase
+    // Parts (slice 1): which parts she added, and the test setting that puts Home first. Off by default (standing rule 31), so the calendar stays first.
+    @StateObject private var registry = PartRegistry()
+    @AppStorage("FingusAddedParts") private var addedRaw = PartsSelection.encode(PartsSelection.standard)
+    @AppStorage("FingusPartsHome") private var partsHome = false
+    @State private var showYou = false
+    @State private var openAfterYou = false
 
     private func setChat(_ on: Bool) {
         withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { showChat = on }
@@ -40,13 +46,18 @@ struct RootView: View {
                 ProgressView()
             } else {
                 ZStack {
+                    if partsHome {
+                        PartsHomeScreen(registry: registry, added: PartsSelection.decode(addedRaw), hasPC: hasAddress,
+                                        openYou: { showYou = true }, openWeb: { showWeb = true }, webClosed: webClosed)
+                    } else {
                     NavigationStack {
                         OrganizerDayScreen(open: { _ in if hasAddress { showWeb = true } },
                                            openLists: { if hasAddress { showWeb = true } },
                                            openChat: chatOpener,
-                                           menuTitle: hasAddress ? "More" : "Connect your PC",
-                                           menuAction: { showWeb = true })
+                                           menuTitle: "You",
+                                           menuAction: { showYou = true })
                             .id(hasAddress)      // a new set of stores when a PC is set up or removed
+                    }
                     }
                     // Chat is a page that comes in over the calendar and goes back the same way; the web view is where Face ID unlocks Locked
                     if showChat && !hasAddress {
@@ -63,6 +74,13 @@ struct RootView: View {
                             .zIndex(1)
                     }
                 }
+                .sheet(isPresented: $showYou, onDismiss: {
+                    // one cover at a time: the web view opens once You has gone
+                    if openAfterYou { openAfterYou = false; showWeb = true }
+                }) {
+                    YouScreen(registry: registry, addedRaw: $addedRaw, partsHome: $partsHome, hasPC: hasAddress,
+                              openAero: { openAfterYou = true; showYou = false }, close: { showYou = false })
+                }
                 .fullScreenCover(isPresented: $showWeb, onDismiss: { webClosed += 1 }) {
                     ZStack(alignment: .topTrailing) {
                         WebScreen().ignoresSafeArea()
@@ -75,6 +93,7 @@ struct RootView: View {
         .task {
             await DemoMode.prepare()
             ready = true
+            await registry.load()
         }
         .onChange(of: scenePhase) { phase in
             // top up the phone's reminders when the app opens: iOS keeps only the nearest 64
