@@ -1,0 +1,139 @@
+{
+ "ai": true,
+ "answers": "aero",
+ "board": "",
+ "closed": "",
+ "devices": {
+  "@pc": [
+   {
+    "added": 1792756518.627137,
+    "device": "pc",
+    "ecdh": "BI-Y9coN_tkHFMIFJ_SsvWWSDGxFzmxuXJLthbjZHLLz_rxDvEqGqkCh2DBot3aK2-cw1OrquMXnpg28MiOAiQA",
+    "label": "pc",
+    "private": null,
+    "sign": "BAkxhyURu0Ae8YaDpXmhxLQHarnXmgXQrpndPc9FfXkogo1KElwbdnQ6YKYtBcr3QPMDKvBPrGpSzFdQwKhJTyU"
+   }
+  ],
+  "owner": [
+   {
+    "added": 1792756518.627046,
+    "device": "phoneDeviceId0001",
+    "ecdh": "BHMMXnrhk40Zt9TVZm_gX8m9ItE4aD9TbpiiZ4shNwG1cdvh97pM_ABPWVQQU_oPUxpfTiEXS-rYkA0mq2KylWQ",
+    "label": "iPhone (Aero app)",
+    "person_id": "sub-invented-0001",
+    "private": null,
+    "sign": "BEBv9yN5PBXcv08zWG7kbvhdGGYPUCOxUiC_Kc9mIYWJi2pPT7Pvq-_xY55pwfOp4fME4dGn9B6le31hhkzAndE"
+   }
+  ]
+ },
+ "direct": false,
+ "epoch": 0,
+ "files": "ask",
+ "folder": false,
+ "holders": {},
+ "id": "r0123456789abcdef",
+ "lead": null,
+ "live_signers": {},
+ "manager": "",
+ "me": "owner",
+ "members": [
+  {
+   "added_by": "owner",
+   "character": null,
+   "color": null,
+   "context": null,
+   "effort": null,
+   "fingoid": null,
+   "heed": "all",
+   "kind": "person",
+   "model": null,
+   "name": "owner",
+   "nick": null,
+   "since_epoch": 0,
+   "think": null,
+   "voice": null
+  },
+  {
+   "added_by": "owner",
+   "character": null,
+   "color": null,
+   "context": null,
+   "effort": null,
+   "fingoid": null,
+   "heed": "all",
+   "kind": "model",
+   "model": "invented-model:7b",
+   "name": "fingus",
+   "nick": null,
+   "since_epoch": 0,
+   "think": null,
+   "voice": null
+  }
+ ],
+ "messages": [
+  {
+   "at": 1792756518.6278584,
+   "ct": null,
+   "device": "",
+   "epoch": null,
+   "iv": null,
+   "kind": "note",
+   "note": "sub-invented-0001 started this",
+   "sender": "",
+   "seq": 1,
+   "sig": null
+  },
+  {
+   "at": 1792756518.629798,
+   "ct": "lWE11lEYQ3Or1rQfHYinnMZdAGICF0Ln0hasiQlJ",
+   "device": "phoneDeviceId0001",
+   "epoch": 0,
+   "iv": "OZhAWEwZKg3QqOHv",
+   "kind": "person",
+   "note": null,
+   "sender": "owner",
+   "sender_id": "sub-invented-0001",
+   "seq": 2,
+   "sig": "nrnW-dcqXVcnQ_PFgytQ7QEDwMzLucLgE8l9acUEPh9yubP9h27DjTbyS5VEyfEfnESGDDXzxEKUgp5Kz3U-RA"
+  },
+  {
+   "at": 1792756518.6301148,
+   "ct": "FoqAG1wlTOd-1jWs2vQL0EPK5_EIzyO0QPL2nqqDoeUVDanLh-d2HJcY2JKyI9w",
+   "device": "pc",
+   "epoch": 0,
+   "iv": "NRTvmZDLq9AeCAgg",
+   "kind": "model",
+   "note": null,
+   "sender": "fingus",
+   "seq": 3,
+   "sig": "CdyuZPloX5kK-MD_mzq7flQOhhtBOYGWwU92ROR9aMqB0wG3zHvPtNvH9A90iKCn8qyYV9-yqUt06mItZNQtmQ"
+  }
+ ],
+ "missing": [],
+ "mode": "",
+ "mode_kept": "",
+ "mode_plain": "",
+ "name": null,
+ "owner": "Aryn",
+ "parent": null,
+ "parent_seq": null,
+ "permission": null,
+ "private": false,
+ "project": "",
+ "run": null,
+ "run_step": null,
+ "seals": [
+  {
+   "by_device": "phoneDeviceId0001",
+   "by_person": "owner",
+   "by_person_id": "sub-invented-0001",
+   "ct": "-r2KEgk51zjeZBK_ydh9CQYJ-cfInRHYDWclfOCElsvStiNSAJHx89CS-OLtgXnZ",
+   "epoch": 0,
+   "iv": "1-N9Qq-icvuiiD3N"
+  }
+ ],
+ "shape": null,
+ "sub": null,
+ "voice": "",
+ "writing": []
+}

@@ -1,0 +1,220 @@
+{
+ "date": "2026-10-23",
+ "day": {
+  "anytime": [
+   {
+    "all_day": false,
+    "color": "accent",
+    "date": "2026-10-23",
+    "done_at": "",
+    "done_at_text": "",
+    "end": "",
+    "end_text": "",
+    "icon": "tasks",
+    "id": "c3c3c3c3",
+    "kind": "item",
+    "late": false,
+    "open": {
+     "app": "organizer",
+     "id": "c3c3c3c3"
+    },
+    "question": null,
+    "repeat": false,
+    "since": "",
+    "source": "organizer",
+    "state": "open",
+    "time": "",
+    "time_text": "",
+    "title": "Water the plants",
+    "type": "task"
+   }
+  ],
+  "date": "2026-10-23",
+  "date_text": "Friday 23 October",
+  "is_today": true,
+  "label": "Today",
+  "next": "2026-10-24",
+  "now": {
+   "time": "09:00",
+   "time_text": "9:00 AM"
+  },
+  "prev": "2026-10-22",
+  "rows": [
+   {
+    "all_day": false,
+    "color": "accent",
+    "date": "2026-10-23",
+    "done_at": "07:40",
+    "done_at_text": "7:40 AM",
+    "end": "",
+    "end_text": "",
+    "icon": "tasks",
+    "id": "d4d4d4d4",
+    "kind": "item",
+    "late": false,
+    "open": {
+     "app": "organizer",
+     "id": "d4d4d4d4"
+    },
+    "question": null,
+    "repeat": false,
+    "since": "",
+    "source": "organizer",
+    "state": "done",
+    "time": "07:00",
+    "time_text": "7:00 AM",
+    "title": "Send the form",
+    "type": "task"
+   },
+   {
+    "all_day": false,
+    "color": "accent",
+    "date": "2026-10-23",
+    "done_at": "",
+    "done_at_text": "",
+    "end": "",
+    "end_text": "",
+    "icon": "tasks",
+    "id": "a1a1a1a1",
+    "kind": "item",
+    "late": true,
+    "open": {
+     "app": "organizer",
+     "id": "a1a1a1a1"
+    },
+    "question": null,
+    "repeat": false,
+    "since": "",
+    "source": "organizer",
+    "state": "open",
+    "time": "08:00",
+    "time_text": "8:00 AM",
+    "title": "Take pills",
+    "type": "task"
+   },
+   {
+    "kind": "now",
+    "time": "09:00",
+    "time_text": "9:00 AM"
+   },
+   {
+    "kind": "free",
+    "text": "Free until 2:30 PM"
+   },
+   {
+    "all_day": false,
+    "color": "accent",
+    "date": "2026-10-23",
+    "done_at": "",
+    "done_at_text": "",
+    "end": "",
+    "end_text": "",
+    "icon": "tasks",
+    "id": "b2b2b2b2",
+    "kind": "item",
+    "late": false,
+    "open": {
+     "app": "organizer",
+     "id": "b2b2b2b2"
+    },
+    "question": null,
+    "repeat": false,
+    "since": "",
+    "source": "organizer",
+    "state": "open",
+    "time": "14:30",
+    "time_text": "2:30 PM",
+    "title": "Call the dentist",
+    "type": "task",
+    "until": "in 5 h 30 min",
+    "until_words": "in 5 hours 30 minutes"
+   }
+  ],
+  "simple": {
+   "behind": [
+    {
+     "id": "a1a1a1a1",
+     "source": "organizer",
+     "time_text": "8:00 AM",
+     "title": "Take pills"
+    }
+   ],
+   "clock": "It's Friday, 9:00 AM",
+   "did": [
+    {
+     "id": "d4d4d4d4",
+     "text": "You sent the form at 7:40 AM"
+    }
+   ],
+   "greeting": "Good morning",
+   "later": [
+    {
+     "id": "c3c3c3c3",
+     "source": "organizer",
+     "time_text": "",
+     "title": "Water the plants"
+    }
+   ],
+   "next": {
+    "button": "Done",
+    "color": "accent",
+    "icon": "tasks",
+    "id": "b2b2b2b2",
+    "line": "At 2:30 PM, in 5 hours 30 minutes",
+    "open": {
+     "app": "organizer",
+     "id": "b2b2b2b2"
+    },
+    "source": "organizer",
+    "time_text": "2:30 PM",
+    "title": "Call the dentist"
+   },
+   "none": ""
+  }
+ },
+ "looks": {
+  "buy": {
+   "color": "green",
+   "icon": "cart"
+  },
+  "event": {
+   "color": "orange",
+   "icon": "calendar"
+  },
+  "repeat": {
+   "color": "purple",
+   "icon": "repeat"
+  },
+  "task": {
+   "color": "accent",
+   "icon": "tasks"
+  }
+ },
+ "mode": "timeline",
+ "modes": [
+  "timeline",
+  "simple"
+ ],
+ "note": "",
+ "on": true,
+ "span": "day",
+ "tabs": [
+  {
+   "id": "day",
+   "name": "Day"
+  },
+  {
+   "id": "week",
+   "name": "Week"
+  },
+  {
+   "id": "month",
+   "name": "Month"
+  },
+  {
+   "id": "year",
+   "name": "Year"
+  }
+ ],
+ "today": "2026-10-23"
+}

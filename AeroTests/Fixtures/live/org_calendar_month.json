@@ -1,0 +1,457 @@
+{
+ "date": "2026-10-23",
+ "looks": {
+  "buy": {
+   "color": "green",
+   "icon": "cart"
+  },
+  "event": {
+   "color": "orange",
+   "icon": "calendar"
+  },
+  "repeat": {
+   "color": "purple",
+   "icon": "repeat"
+  },
+  "task": {
+   "color": "accent",
+   "icon": "tasks"
+  }
+ },
+ "mode": "timeline",
+ "modes": [
+  "timeline",
+  "simple"
+ ],
+ "month": {
+  "cells": [
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-09-28",
+    "day": 28,
+    "in_month": false,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-09-29",
+    "day": 29,
+    "in_month": false,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-09-30",
+    "day": 30,
+    "in_month": false,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-01",
+    "day": 1,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-02",
+    "day": 2,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-03",
+    "day": 3,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-04",
+    "day": 4,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-05",
+    "day": 5,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-06",
+    "day": 6,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-07",
+    "day": 7,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-08",
+    "day": 8,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-09",
+    "day": 9,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-10",
+    "day": 10,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-11",
+    "day": 11,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-12",
+    "day": 12,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-13",
+    "day": 13,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-14",
+    "day": 14,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-15",
+    "day": 15,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-16",
+    "day": 16,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-17",
+    "day": 17,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-18",
+    "day": 18,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-19",
+    "day": 19,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-20",
+    "day": 20,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-21",
+    "day": 21,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-22",
+    "day": 22,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [
+     "accent"
+    ],
+    "count": 4,
+    "date": "2026-10-23",
+    "day": 23,
+    "in_month": true,
+    "pills": [
+     {
+      "color": "accent",
+      "icon": "tasks",
+      "id": "d4d4d4d4",
+      "question": false,
+      "source": "organizer",
+      "state": "done",
+      "time_text": "7:00 AM",
+      "title": "Send the form"
+     },
+     {
+      "color": "accent",
+      "icon": "tasks",
+      "id": "a1a1a1a1",
+      "question": false,
+      "source": "organizer",
+      "state": "open",
+      "time_text": "8:00 AM",
+      "title": "Take pills"
+     },
+     {
+      "color": "accent",
+      "icon": "tasks",
+      "id": "b2b2b2b2",
+      "question": false,
+      "source": "organizer",
+      "state": "open",
+      "time_text": "2:30 PM",
+      "title": "Call the dentist"
+     },
+     {
+      "color": "accent",
+      "icon": "tasks",
+      "id": "c3c3c3c3",
+      "question": false,
+      "source": "organizer",
+      "state": "open",
+      "time_text": "",
+      "title": "Water the plants"
+     }
+    ],
+    "question": false,
+    "today": true
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-24",
+    "day": 24,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-25",
+    "day": 25,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-26",
+    "day": 26,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-27",
+    "day": 27,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-28",
+    "day": 28,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-29",
+    "day": 29,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-30",
+    "day": 30,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-10-31",
+    "day": 31,
+    "in_month": true,
+    "pills": [],
+    "question": false,
+    "today": false
+   },
+   {
+    "colors": [],
+    "count": 0,
+    "date": "2026-11-01",
+    "day": 1,
+    "in_month": false,
+    "pills": [],
+    "question": false,
+    "today": false
+   }
+  ],
+  "next": "2026-11-01",
+  "prev": "2026-09-01",
+  "text": "October 2026",
+  "weekdays": [
+   "M",
+   "T",
+   "W",
+   "T",
+   "F",
+   "S",
+   "S"
+  ]
+ },
+ "note": "",
+ "on": true,
+ "span": "month",
+ "tabs": [
+  {
+   "id": "day",
+   "name": "Day"
+  },
+  {
+   "id": "week",
+   "name": "Week"
+  },
+  {
+   "id": "month",
+   "name": "Month"
+  },
+  {
+   "id": "year",
+   "name": "Year"
+  }
+ ],
+ "today": "2026-10-23"
+}
