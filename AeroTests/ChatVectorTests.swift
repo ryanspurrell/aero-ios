@@ -371,7 +371,7 @@ final class ChatVectorTests: XCTestCase {
         var failed = 0
         do { _ = try await a } catch { failed += 1 }
         do { _ = try await b } catch { failed += 1 }
-        XCTAssertEqual((runs, failed), (1, 2))
+        XCTAssertEqual(runs, 1); XCTAssertEqual(failed, 2)
         let ok = try await flight.run { 7 }
         XCTAssertEqual(ok, 7)
     }
