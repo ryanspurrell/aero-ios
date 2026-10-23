@@ -418,7 +418,8 @@ final class ChatTests: XCTestCase {
     func testAnAnswerThatNothingIsCoveredCarriesWhatWouldStayClosedAndTheAck() {
         let said = ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true,"holds":{"rooms":2,"epochs":3},"ack":"abc","error":"The new device can't open everything yet."}"#.utf8))
         XCTAssertEqual(said, .notCovered(rooms: 2, ack: "abc"))
-        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true}"#.utf8)), .notCovered(rooms: 0, ack: ""))
+        // without holds and an ack (the server sends none when nothing is left to accept) there is nothing to choose: its own words
+        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true}"#.utf8)), .server("That didn't work. Try again."))
     }
 
     func testTheWordsForLettingChatsStayClosedAreGentleAndSayWhatEachKeyDoes() {

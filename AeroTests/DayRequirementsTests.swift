@@ -11,8 +11,17 @@ final class DayRequirementsTests: XCTestCase {
         return try d.decode(DayAnswer.self, from: Data(json.utf8))
     }
 
-    private func item(_ extra: String) -> String {
-        "{\"kind\":\"item\",\"source\":\"organizer\",\"type\":\"task\",\"time_text\":\"4:00 PM\",\"time\":\"16:00\",\"color\":\"accent\",\"icon\":\"tasks\"," + extra + "}"
+    private func item(_ extra: String, timeText: String = "4:00 PM", time: String = "16:00") -> String {
+        "{\"kind\":\"item\",\"source\":\"organizer\",\"type\":\"task\",\"time_text\":\"" + timeText + "\",\"time\":\"" + time + "\",\"color\":\"accent\",\"icon\":\"tasks\"," + extra + "}"
+    }
+
+    /// A task made the way the phone keeps one added by quick add (PhoneOrganizer.quickAdd), without the reader: the phone has no "add" change,
+    /// so these tests keep the record directly.
+    private func add(_ phone: PhoneOrganizer, _ title: String) throws {
+        let rec: [String: JSONValue] = ["type": .string("task"), "title": .string(title), "status": .string("open"), "attention": .string("inbox"),
+                                        "changed": .string("2026-10-16 09:00"), "basis": .object(["status": .string("said"), "by": .string(PhoneOrganizer.person)]),
+                                        "locked": .bool(false)]
+        _ = try phone.store.put(oid: PhoneStore.newID(), rec: rec, by: PhoneOrganizer.person, why: "added", replaces: nil)
     }
 
     private func day(rows: [String], simple: String = "") throws -> DayAnswer {
@@ -59,7 +68,7 @@ final class DayRequirementsTests: XCTestCase {
     func testThingsAtTheSameTimeHaveNoFirstAndTheReaderOrdersThem() throws {
         let nextJSON = { (id: String) in "{\"id\":\"\(id)\",\"title\":\"\(id)\",\"open\":{\"app\":\"organizer\",\"id\":\"\(id)\"},\"line\":\"At 3:00 PM, in 1 hour\",\"button\":\"Done\"}" }
         let d = try day(rows: [item("\"id\":\"b\",\"title\":\"b\",\"state\":\"open\""), item("\"id\":\"a\",\"title\":\"a\",\"state\":\"open\""),
-                               item("\"id\":\"z\",\"time\":\"18:00\",\"title\":\"z\",\"state\":\"open\"")],
+                               item("\"id\":\"z\",\"title\":\"z\",\"state\":\"open\"", timeText: "6:00 PM", time: "18:00")],
                         simple: ",\"nexts\":[\(nextJSON("b")),\(nextJSON("a"))]")
         XCTAssertEqual(d.rows.map(\.id), ["b", "a", "z"], "as Organizer made them, not by title")
         XCTAssertEqual(TieOrder.arrange(d.rows, rightToLeft: false).map(\.id), ["b", "a", "z"])
@@ -75,13 +84,13 @@ final class DayRequirementsTests: XCTestCase {
     func testCompletingTwiceKeepsBothDoneObservationsAndEditingToDoneRecordsOne() async throws {
         var now = Date()
         let phone = PhoneOrganizer(store: try PhoneStore(), reader: CannedQuickAddReader(), clock: { now })
-        try await phone.send("add", ["title": .string("Water the ferns")])
+        try add(phone, "Water the ferns")
         let id = try phone.store.book().now.keys.first!
         try await phone.send("complete", ["id": .string(id)])
         now = now.addingTimeInterval(2 * 86400)
         try await phone.send("complete", ["id": .string(id)])
         XCTAssertEqual(try phone.store.book().now[id]?.rec["done_ats"]?.arrayValue?.count, 2, "the second does not replace the first")
-        try await phone.send("add", ["title": .string("Mail the form")])
+        try add(phone, "Mail the form")
         let other = try phone.store.book().now.keys.first { $0 != id }!
         try await phone.send("update", ["id": .string(other), "status": .string("done")])
         XCTAssertNotNil(try phone.store.book().now[other]?.rec["done_at"], "edited to done: it has the time it was done")
@@ -135,7 +144,7 @@ final class DayRequirementsTests: XCTestCase {
     @MainActor
     func testSkipThenDoneKeepsBothObservations() async throws {
         let phone = PhoneOrganizer(store: try PhoneStore(), reader: CannedQuickAddReader(), clock: { Date() })
-        try await phone.send("add", ["title": .string("Wipe desk")])
+        try add(phone, "Wipe desk")
         let id = try phone.store.book().now.keys.first!
         try await phone.send("skip", ["id": .string(id)])
         try await phone.send("complete", ["id": .string(id)])
@@ -163,7 +172,7 @@ final class DayRequirementsTests: XCTestCase {
     @MainActor
     func testATapRecordsItsPointerAndMomentAndNeverTheTitle() async throws {
         let phone = PhoneOrganizer(store: try PhoneStore(), reader: CannedQuickAddReader(), clock: { Date() })
-        try await phone.send("add", ["title": .string("Pay Dr Chen the secret bill")])
+        try add(phone, "Pay Dr Chen the secret bill")
         let id = try phone.store.book().now.keys.first!
         try await phone.send("complete", ["id": .string(id), "rev": .string("stale0000000"),
                                           "presented": Presentation.presented(Presentation.nextCard, pointer: "done")])
@@ -185,8 +194,8 @@ final class DayRequirementsTests: XCTestCase {
     @MainActor
     func testMomentsAreTakenWithTheWriteAndLeaveNoGap() async throws {
         let phone = PhoneOrganizer(store: try PhoneStore(), reader: CannedQuickAddReader(), clock: { Date() })
-        try await phone.send("add", ["title": .string("First")])
-        try await phone.send("add", ["title": .string("Second")])
+        try add(phone, "First")
+        try add(phone, "Second")
         let ids = Array(try phone.store.book().now.keys)
         try await phone.send("complete", ["id": .string(ids[0]), "presented": Presentation.presented(Presentation.nextCard, pointer: "done")])
         do { try await phone.send("complete", ["id": .string("no-such-item")]); XCTFail("an unknown item is refused") } catch {}

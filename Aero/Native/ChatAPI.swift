@@ -103,7 +103,8 @@ final class ChatAPI {
         if said?.locked == true { return .locked }
         if status >= 400, let full = said?.devicesFull { return .devicesFull(full) }
         if status >= 400, said?.deviceRemoved == true { return .deviceRemoved }
-        if status >= 400, said?.notCovered == true { return .notCovered(rooms: said?.holds?.rooms ?? 0, ack: said?.ack ?? "") }
+        // Aero sends `holds` and an `ack` only when keys would stay closed; with none there is nothing for the person to accept, so it is just its words
+        if status >= 400, said?.notCovered == true, let ack = said?.ack, !ack.isEmpty { return .notCovered(rooms: said?.holds?.rooms ?? 0, ack: ack) }
         if status == 401 || status == 403 { return .notSignedIn }
         if status >= 400 { return .server(said?.error ?? "That didn't work. Try again.") }
         return nil
