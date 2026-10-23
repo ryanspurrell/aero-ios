@@ -300,8 +300,12 @@ final class PhoneRemindersTests: XCTestCase {
 
 /// The real thing: Python in the app, reading words and arranging a day. Runs in the simulator only (the build runs it there).
 final class EmbeddedReaderTests: XCTestCase {
+    /// Today at 8 in the morning: "at 9" and "tonight at 9" are still ahead, whatever hour the build runs (it failed at 21:35 UTC, when
+    /// both had passed and the reader put them on tomorrow).
+    private static func morning() -> Date { Calendar.current.date(bySettingHour: 8, minute: 0, second: 0, of: Date())! }
+
     func testAQuickAddLineBecomesARecordAndTheDayShowsIt() async throws {
-        let phone = PhoneOrganizer(store: try PhoneStore(), reader: EmbeddedReader.shared)
+        let phone = PhoneOrganizer(store: try PhoneStore(), reader: EmbeddedReader.shared, clock: Self.morning)
         let outcome = try await phone.quickAdd("water the plants tonight at 9")
         XCTAssertNil(outcome.question)
         let day = try await phone.calendar(span: .day, date: "")
@@ -314,7 +318,7 @@ final class EmbeddedReaderTests: XCTestCase {
     }
 
     func testAnUncertainLineAsksWithOnlyLiveReadings() async throws {
-        let phone = PhoneOrganizer(store: try PhoneStore(), reader: EmbeddedReader.shared)
+        let phone = PhoneOrganizer(store: try PhoneStore(), reader: EmbeddedReader.shared, clock: Self.morning)
         let outcome = try await phone.quickAdd("call Sam at 9")
         let q = try XCTUnwrap(outcome.question)
         XCTAssertGreaterThanOrEqual(q.choices.count, 1)
