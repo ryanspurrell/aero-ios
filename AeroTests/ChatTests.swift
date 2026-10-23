@@ -269,9 +269,31 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(s.key, "Try again")
         XCTAssertEqual(ChatStopWords.make(doing: ChatStopWords.sending, error: ChatAPI.Failure.devicesFull(0)).text,
                        "This phone can't be added: you have too many devices. Remove one in Devices.")
-        // the others still come in the one shape
+        // the others still come in the one shape, and what Aero said is in it when it said something (it was dropped before 2026-10-23)
         XCTAssertEqual(ChatStopWords.make(doing: ChatStopWords.opening, error: ChatAPI.Failure.server("x")).text,
+                       "Opening this chat stopped at Aero's answer. Aero said \u{201C}x\u{201D}. Try again.")
+        // the app's own generic words are not Aero's, so they are not quoted as if they were
+        XCTAssertEqual(ChatStopWords.make(doing: ChatStopWords.opening, error: ChatAPI.Failure.server("That didn't work. Try again.")).text,
                        "Opening this chat stopped at Aero's answer. Try again.")
+    }
+
+    func testTheInstalledAerosTooManyDevicesSentenceIsRecognisedWithoutTheFieldOnlyAnotherBranchSends() {
+        // main's Aero sends the store's sentence and no `devices_full` (branch chat-devices adds the number)
+        XCTAssertEqual(ChatAPI.failure(status: 400, data: Data(#"{"error":"too many devices; remove one first"}"#.utf8)), .devicesFull(0))
+        XCTAssertEqual(ChatAPI.failure(status: 400, data: Data(#"{"error":"That isn't allowed here."}"#.utf8)), .server("That isn't allowed here."))
+    }
+
+    func testAnAnswerFromTheEdgeIsNotAerosAnswer() {
+        // Cloudflare's or the tunnel's page, with nothing of Aero's in it
+        for code in [502, 503, 504, 522, 530] {
+            XCTAssertEqual(ChatAPI.failure(status: code, data: Data("<html>error</html>".utf8)), .notAero(code))
+        }
+        // Aero's own 500 and its own JSON words stay Aero's
+        XCTAssertEqual(ChatAPI.failure(status: 500, data: Data("500: Internal Server Error".utf8)), .server("That didn't work. Try again."))
+        XCTAssertEqual(ChatAPI.failure(status: 503, data: Data(#"{"error":"Couldn't reach Fingus Core"}"#.utf8)), .server("Couldn't reach Fingus Core"))
+        let s = ChatStopWords.make(doing: ChatStopWords.opening, error: ChatAPI.Failure.notAero(502))
+        XCTAssertEqual(s.text, "Opening this chat stopped at reaching Aero. Check your connection, then try again.")
+        XCTAssertEqual(s.diagnosis, "pc_unreachable")
     }
 
     func testRemovingADeviceNamesTheOneThatTakesItsPlaceAndNeverAnAcknowledgement() throws {

@@ -70,6 +70,7 @@ struct PartsHomeScreen: View {
                 HStack {
                     Text("Home").fx(Look.Size.title, style: .title2).foregroundStyle(Look.Palette.fg)
                     Spacer()
+                    ConnectionIsland()
                     Button(action: openYou) {
                         Text("You").fx(Look.Size.tab, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
                     }
@@ -155,6 +156,7 @@ struct PartPage: View {
                     }
                     .accessibilityLabel("Back to Home")
                     Spacer()
+                    ConnectionIsland()
                 }
                 .padding(.horizontal, Look.Space.gutter)
                 VStack(spacing: Look.Space.snug) {

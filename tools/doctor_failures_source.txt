@@ -1,0 +1,4 @@
+Aero/Resources/fingus_core_doctor_failures.json is Doctor's own data file, copied unchanged (2026-10-23):
+  from   Fingus repository, projects/core/home/.local/bin/fingus_core_doctor_failures.json at origin/main ee14178 (the same bytes as the installed copy)
+  sha256 8d5ef1a655e998cc76d9aab8f94aa393b175fac53ac07bad285336fd441254e5
+Doctor's flow over it is Systems/FailureDiagnosis.lean; the app's copy of that flow is Aero/Native/Connection/FailureDiagnosis.swift.

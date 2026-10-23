@@ -37,12 +37,7 @@ struct OrganizerDayScreen: View {
                         if let failure = store.failure {
                             // the one shape: what was being done, which step stopped, and a key that does what can be done now
                             Text(failure).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
-                            Button { Task { await store.load() } } label: {
-                                Text("Try again").fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
-                                    .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
-                                    .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent))
-                            }
-                            .buttonStyle(BubblePressStyle())
+                            FailureKeys(tryAgain: "Try again", diagnosis: store.failureDiagnosis) { Task { await store.load() } }
                         }
                         content
                     }
@@ -115,6 +110,8 @@ struct OrganizerDayScreen: View {
                 .accessibilityLabel("Back to today")
             }
             Spacer()
+            // which place the app uses and whether it reached it, since when (the header's island)
+            ConnectionIsland()
             Menu {
                 Button { menuAction() } label: { Label(menuTitle, systemImage: store.backendKind == .phone ? "desktopcomputer" : "ellipsis") }
             } label: {
@@ -504,6 +501,7 @@ struct NewBox: View {
     @State private var text = ""
     @StateObject private var model = QuickAddModel()
     @FocusState private var focused: Bool
+    @State private var asking = false
 
     private var backend: OrganizerBackend { model.backend }
 
@@ -537,6 +535,7 @@ struct NewBox: View {
             QuickAddAsk(outcome: item.outcome, backend: backend) { model.asking = nil; onAdded() }
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $asking) { FindOutWhySheet(failure: model.stopped?.diagnosis ?? "other") { asking = false } }
         .onAppear { model.onChanged = onAdded }
         .onChange(of: text) { if !$0.isEmpty { model.clear() } }
         .task { await DemoMode.runQuickAddIfAsked(backend: backend) { outcome in model.asking = outcome; onAdded() } }
@@ -551,10 +550,17 @@ struct NewBox: View {
     /// The quiet note at the box: a result with what it can do, or, when something stopped, the one shape and its key.
     @ViewBuilder private var note: some View {
         if let stopped = model.stopped {
-            noteRow(stopped.text, keys: [(stopped.key, { _ = Task { await model.retry() } })])
+            noteRow(stopped.text, keys: stoppedKeys(stopped))
         } else if let saved = model.saved {
             noteRow(saved.words, keys: noteKeys(saved))
         }
+    }
+
+    /// The key that does what can be done now, and, with a PC to ask, Find out why.
+    private func stoppedKeys(_ stopped: QuickAddModel.Stopped) -> [(String, () -> Void)] {
+        var keys: [(String, () -> Void)] = [(stopped.key, { _ = Task { await model.retry() } })]
+        if backend.kind == .pc && ConnectionStatus.whyOffered(hasAddress: AppInfo.address != nil) { keys.append(("Find out why", { asking = true })) }
+        return keys
     }
 
     private func noteKeys(_ saved: QuickAddModel.Saved) -> [(String, () -> Void)] {

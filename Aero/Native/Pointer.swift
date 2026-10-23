@@ -299,7 +299,10 @@ struct PointerView: View {
                     answer("Something else", hue: nil, note: nil) {
                         Task { if await actions.keepPlain(q) == false { failure = "That didn't save. Try again." } }
                     }
-                    if let failure { Text(failure).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.now) }
+                    if let failure {
+                        Text(failure).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.now)
+                        FindOutWhyKey(diagnosis: "other")
+                    }
                 }
             }
         }

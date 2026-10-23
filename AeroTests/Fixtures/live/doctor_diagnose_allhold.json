@@ -1,0 +1,12 @@
+{
+ "checks": {
+  "core_answers": "holds",
+  "device_online": "holds",
+  "doctor_findings": "holds",
+  "pc_answers": "holds"
+ },
+ "failure": "pc_unreachable",
+ "kind": "allHold",
+ "open": [],
+ "text": "Everything checks out now. Do it again."
+}

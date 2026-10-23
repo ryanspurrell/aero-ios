@@ -95,6 +95,10 @@ struct DayItem: Codable, Hashable, Identifiable {
         case open, question, unmarked, until, untilWords, text
     }
 
+    /// The installed Aero (organizer_timeline.py on main) calls a task row whose time passed with nothing recorded `late`; the branch the app
+    /// was written against calls it `unmarked`. It is the same condition, so `late` is read where `unmarked` is not sent.
+    private enum Older: String, CodingKey { case late }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         kind = try c.decodeIfPresent(String.self, forKey: .kind)
@@ -120,7 +124,8 @@ struct DayItem: Codable, Hashable, Identifiable {
         isRepeat = try c.decodeIfPresent(Bool.self, forKey: .isRepeat)
         open = try c.decodeIfPresent(OpenRef.self, forKey: .open)
         question = try c.decodeIfPresent(Question.self, forKey: .question)
-        unmarked = try c.decodeIfPresent(Bool.self, forKey: .unmarked)
+        let older = try decoder.container(keyedBy: Older.self)
+        unmarked = try c.decodeIfPresent(Bool.self, forKey: .unmarked) ?? older.decodeIfPresent(Bool.self, forKey: .late)
         until = try c.decodeIfPresent(String.self, forKey: .until)
         untilWords = try c.decodeIfPresent(String.self, forKey: .untilWords)
         text = try c.decodeIfPresent(String.self, forKey: .text)
@@ -171,6 +176,27 @@ struct SimpleDay: Codable, Hashable {
     var later: [SimpleLine]
     var did: [SimpleLine]
     var none: String
+
+    enum CodingKeys: String, CodingKey { case greeting, clock, next, nexts, unmarked, later, did, none }
+    /// The installed Aero (organizer_timeline.py on main, 2026-10-23) sends the things whose time passed with nothing recorded as `behind` and
+    /// has no `unmarked`; the branch the app was written against renamed it. A required `unmarked` stopped the whole Day on a PC that sends
+    /// `behind` (Aryn's phone, 2026-10-23, 5:39 am). Either name is read; neither is an empty list.
+    fileprivate enum Older: String, CodingKey { case behind }
+}
+
+extension SimpleDay {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let older = try decoder.container(keyedBy: Older.self)
+        greeting = try c.decode(String.self, forKey: .greeting)
+        clock = try c.decode(String.self, forKey: .clock)
+        next = try c.decodeIfPresent(SimpleNext.self, forKey: .next)
+        nexts = try c.decodeIfPresent([SimpleNext].self, forKey: .nexts)
+        unmarked = try c.decodeIfPresent([SimpleLine].self, forKey: .unmarked) ?? older.decodeIfPresent([SimpleLine].self, forKey: .behind) ?? []
+        later = try c.decode([SimpleLine].self, forKey: .later)
+        did = try c.decode([SimpleLine].self, forKey: .did)
+        none = try c.decode(String.self, forKey: .none)
+    }
 }
 
 struct DayAnswer: Codable {

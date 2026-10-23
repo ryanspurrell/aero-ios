@@ -13,6 +13,7 @@ final class LiveShapeTests: XCTestCase {
         saved = AppInfo.address
         AppInfo.address = URL(string: "https://aero.invalid")
         LiveStub.reset()
+        ConnectionMonitor.shared.startAgain()
     }
 
     override func tearDown() {
@@ -69,6 +70,70 @@ final class LiveShapeTests: XCTestCase {
         await store.load()
         XCTAssertNil(store.failure)
         XCTAssertEqual(store.answer?.day?.date, "2026-10-23")
+        // the island: the PC answered, so it was reached
+        XCTAssertEqual(ConnectionMonitor.shared.shown.reading, .yes)
+        XCTAssertEqual(ConnectionMonitor.shared.backend, .pc)
+    }
+
+    // MARK: what the Day line says when it stops
+
+    private func dayLine(_ route: @escaping (URLRequest) -> LiveStub.Answer) async -> OrganizerDayStore {
+        LiveStub.route("POST /private/org", route)
+        let store = OrganizerDayStore(backend: OrganizerAPI(session: LiveStub.session()))
+        await store.load()
+        return store
+    }
+
+    func testADayThatCouldNotBeReachedIsToldAsThatAndTheIslandSaysNo() async {
+        let store = await dayLine { _ in LiveStub.Answer(status: 0, body: Data(), failure: .cannotConnectToHost) }
+        XCTAssertEqual(store.failure, "Showing your day stopped at reaching your PC.")
+        XCTAssertEqual(store.failureDiagnosis, "pc_unreachable")
+        XCTAssertEqual(ConnectionMonitor.shared.shown.reading, .no)
+    }
+
+    func testAnEdgePageIsNotAnAnswerFromAero() async {
+        let store = await dayLine { _ in LiveStub.Answer(status: 502, body: Data("<html>Bad gateway</html>".utf8), type: "text/html") }
+        XCTAssertEqual(store.failure, "Showing your day stopped at reaching your PC.")
+        XCTAssertEqual(ConnectionMonitor.shared.shown.reading, .no)
+    }
+
+    func testAnUnhandledErrorOfAerosOwnIsAerosAnswer() async {
+        let store = await dayLine { _ in LiveStub.Answer(status: 500, body: Data("500: Internal Server Error".utf8), type: "text/plain") }
+        XCTAssertEqual(store.failure, "Showing your day stopped at your PC's answer.")
+        XCTAssertEqual(store.failureDiagnosis, "other")
+    }
+
+    func testNotSignedInIsToldAsSigningIn() async {
+        let store = await dayLine { _ in LiveStub.Answer(status: 401, body: Data(#"{"error": "sign in first"}"#.utf8)) }
+        XCTAssertEqual(store.failure, "Showing your day stopped at signing in. Open Aero to sign in, then try again.")
+        // Aero answered, so it was reached
+        XCTAssertEqual(ConnectionMonitor.shared.shown.reading, .yes)
+    }
+
+    func testOrganizerNotRunningIsAerosOwnWordsAndIsQuoted() async {
+        // aero_web.private_org answers 200 {"on": false, "error": "Organizer is not running"} while the service is down
+        let store = await dayLine { _ in LiveStub.Answer(status: 200, body: Data(#"{"on": false, "error": "Organizer is not running"}"#.utf8)) }
+        XCTAssertEqual(store.failure, "Showing your day stopped at your PC's answer. Your PC said \u{201C}Organizer is not running\u{201D}.")
+    }
+
+    func testAnAnswerThatIsNotTheDayIsToldAsUnreadable() async {
+        let store = await dayLine { _ in LiveStub.Answer(status: 200, body: Data(#"{"on": true, "span": "day"}"#.utf8)) }
+        XCTAssertEqual(store.failure, "Showing your day stopped at reading your PC's answer.")
+    }
+
+    func testThePhonesOwnDayKeepsItsLine() async {
+        struct Broken: OrganizerBackend {
+            var kind: BackendKind { .phone }
+            func calendar(span: CalendarSpan, date: String) async throws -> CalendarAnswer { throw PhoneOrganizer.Failure.noSuchItem }
+            func apply(_ change: Change) async throws {}
+            func send(_ name: String, _ args: [String: JSONValue]) async throws {}
+            func helperNames() async -> [String] { [] }
+            func quickAdd(_ text: String) async throws -> QuickAddOutcome { QuickAddOutcome(title: text, typed: text, question: nil, likeliest: nil) }
+            func keepPlain(_ question: Question) async throws {}
+        }
+        let store = OrganizerDayStore(backend: Broken())
+        await store.load()
+        XCTAssertEqual(store.failure, "Showing your day stopped at reading your records.")
     }
 
     // MARK: Chat

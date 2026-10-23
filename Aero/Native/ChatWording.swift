@@ -66,7 +66,15 @@ struct ChatStopped: Equatable {
     var action: Action
     /// Said as it is instead of in the shape, for a stop that is the whole of what the person needs ("This phone can't be added: ...").
     var words: String? = nil
-    var text: String { words ?? "\(doing) stopped at \(step). \(next)" }
+    /// What Aero said, when it said something in words of its own (a refusal's sentence); shown so the line is not only "Aero's answer".
+    var said: String? = nil
+    /// Doctor's id for this kind of failure (fingus_core_doctor_failures.json), for the Find out why key.
+    var diagnosis = "other"
+    var text: String {
+        if let words { return words }
+        let aero = said.map { " Aero said \u{201C}\($0)\u{201D}." } ?? ""
+        return "\(doing) stopped at \(step).\(aero) \(next)"
+    }
 }
 
 enum ChatStep {
@@ -105,14 +113,22 @@ enum ChatStopWords {
             case .deviceRemoved:
                 return ChatStopped(doing: doing, step: ChatStep.devices, next: "This phone was removed from your devices, so it needs new keys. Try again.", key: "Try again", action: .retry,
                                    words: ChatWords.deviceRemoved)
-            case .server, .notCovered:
+            case .server(let words):
+                // the generic words are the app's own, not Aero's
+                let aero = words == "That didn't work. Try again." ? nil : words
+                return ChatStopped(doing: doing, step: ChatStep.answer, next: "Try again.", key: "Try again", action: .retry, said: aero)
+            case .notCovered:
                 return ChatStopped(doing: doing, step: ChatStep.answer, next: "Try again.", key: "Try again", action: .retry)
+            case .notAero:
+                return ChatStopped(doing: doing, step: ChatStep.reaching, next: "Check your connection, then try again.", key: "Try again", action: .retry,
+                                   diagnosis: "pc_unreachable")
             case .unreadable:
                 return ChatStopped(doing: doing, step: ChatStep.answer, next: "Try again.", key: "Try again", action: .retry)
             }
         }
         if error is URLError {
-            return ChatStopped(doing: doing, step: ChatStep.reaching, next: "Check your connection, then try again.", key: "Try again", action: .retry)
+            return ChatStopped(doing: doing, step: ChatStep.reaching, next: "Check your connection, then try again.", key: "Try again", action: .retry,
+                               diagnosis: "pc_unreachable")
         }
         if error is ChatKeyError {
             return ChatStopped(doing: doing, step: ChatStep.phoneKeys, next: "Unlock the phone, then try again. Nothing was changed.", key: "Try again", action: .retry)

@@ -11,6 +11,7 @@ installed Aero) produces:
   rooms.json                                GET rooms.json   (fingus_messages_store.rooms_of, wrapped as aero_web.rooms_list does)
   room.json                                 GET rooms/<id>.json (store room, messages, seals_for, devices_of, wrapped as room_get does,
                                             names mapped back as MessagesClient._out does)
+  doctor_diagnose_{allhold,cause}.json      what POST doctor/diagnose answers (fingus_core_doctor_diagnose.Diagnosis)
   devices_register_full.json                the refusal a ninth device gets, as aero_web.room_refused words it (status 400)
 
 The messages store runs against a scratch HOME so it never touches the real database. Nothing here is from a real person: the records,
@@ -62,6 +63,27 @@ def calendar_files(bin_dir, out):
         got = TL.calendar_view(Book, span, now.date(), now, False, R.local, R.when, [], {}, TL.DEFAULT_MODE, "", None)
         with open(os.path.join(out, "org_calendar_%s.json" % span), "w") as f:
             json.dump(dict(got, on=True), f, indent=1, sort_keys=True)
+            f.write("\n")
+
+
+def doctor_files(bin_dir, dest):
+    """What POST doctor/diagnose answers (fingus_core_doctor_diagnose.Diagnosis, the code Core runs), for a PC whose Doctor has nothing waiting
+    and for one with a finding waiting."""
+    sys.path.insert(0, bin_dir)
+    D = load("fingus_core_doctor_diagnose", bin_dir)
+
+    class Quiet:
+        def shown(self):
+            return {"groups": {"needs": []}}
+
+    class Waiting:
+        def shown(self):
+            return {"groups": {"needs": [{"id": "invented"}]}}
+    both = {"device_online": "holds", "pc_answers": "holds"}
+    for name, doctor in (("allhold", Quiet()), ("cause", Waiting())):
+        got = D.Diagnosis(doctor=doctor, store=None).diagnose("pc_unreachable", both, None)
+        with open(os.path.join(dest, "doctor_diagnose_%s.json" % name), "w") as f:
+            json.dump(got, f, indent=1, sort_keys=True)
             f.write("\n")
 
 
@@ -154,6 +176,7 @@ def main():
         messages_files(a.bin, a.out, a.aero, a.refusal)
         return
     calendar_files(a.bin, a.out)
+    doctor_files(a.bin, a.out)
     messages_files(a.bin, a.out, a.aero, a.refusal)
 
 

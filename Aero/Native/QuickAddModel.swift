@@ -69,6 +69,8 @@ final class QuickAddModel: ObservableObject {
         var next: String
         var key: String
         var action: Action
+        /// Doctor's id for this kind of failure, for the Find out why key.
+        var diagnosis = "other"
         var text: String { "\(doing) stopped at \(step). \(next)" }
     }
 
@@ -106,7 +108,8 @@ final class QuickAddModel: ObservableObject {
             }
         } catch {
             let step = (error as? QuickAddStopped)?.step.rawValue ?? (backend.kind == .pc ? QuickAddStopped.Step.asking.rawValue : QuickAddStopped.Step.keeping.rawValue)
-            stopped = Stopped(doing: "Saving \u{201C}\(line)\u{201D}", step: step, next: "Your words are kept here.", key: "Try again", action: .add(line))
+            stopped = Stopped(doing: "Saving \u{201C}\(line)\u{201D}", step: step, next: "Your words are kept here.", key: "Try again", action: .add(line),
+                              diagnosis: StopWords.line(doing: "", backend: backend.kind, error: error).diagnosis)
         }
         onChanged()
     }

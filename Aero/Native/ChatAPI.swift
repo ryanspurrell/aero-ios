@@ -31,6 +31,8 @@ final class ChatAPI {
         case notCovered(rooms: Int, ack: String)
         case server(String)
         case unreadable
+        /// A 5xx that is not Aero's word (Cloudflare's or the tunnel's, with nothing behind it): the way to Aero said nothing.
+        case notAero(Int)
     }
 
     private let session: URLSession
@@ -102,17 +104,36 @@ final class ChatAPI {
         let said = try? JSONDecoder().decode(Said.self, from: data)
         if said?.locked == true { return .locked }
         if status >= 400, let full = said?.devicesFull { return .devicesFull(full) }
+        // the installed Aero refuses a ninth device with the store's own sentence and no `devices_full` (that field is on branch chat-devices
+        // only); the count is not said then
+        if status >= 400, ChatAPI.saysTooManyDevices(said?.error) { return .devicesFull(0) }
         if status >= 400, said?.deviceRemoved == true { return .deviceRemoved }
         // Aero sends `holds` and an `ack` only when keys would stay closed; with none there is nothing for the person to accept, so it is just its words
         if status >= 400, said?.notCovered == true, let ack = said?.ack, !ack.isEmpty { return .notCovered(rooms: said?.holds?.rooms ?? 0, ack: ack) }
         if status == 401 || status == 403 { return .notSignedIn }
+        if status >= 400, said?.error == nil, StopWords.isEdge(status) { return .notAero(status) }
         if status >= 400 { return .server(said?.error ?? "That didn't work. Try again.") }
         return nil
     }
 
+    /// The store's sentence for the most devices a person may have (fingus_messages_store.register_device).
+    static func saysTooManyDevices(_ words: String?) -> Bool {
+        words?.lowercased().hasPrefix("too many devices") == true
+    }
+
     private func run(_ request: URLRequest) async throws -> Data {
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, let failure = ChatAPI.failure(status: http.statusCode, data: data) { throw failure }
+        let result: (Data, URLResponse)
+        do { result = try await session.data(for: request) }
+        catch {
+            await ConnectionMonitor.shared.sawOwn(.refused, backend: .pc)
+            throw error
+        }
+        let (data, response) = result
+        if let http = response as? HTTPURLResponse {
+            // any answer below 500 is Aero's, a refusal included (as Doctor's own check "your PC answers" reads it)
+            await ConnectionMonitor.shared.sawOwn(http.statusCode < 500 ? .reached : .refused, backend: .pc)
+            if let failure = ChatAPI.failure(status: http.statusCode, data: data) { throw failure }
+        }
         return data
     }
 
