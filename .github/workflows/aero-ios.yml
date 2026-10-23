@@ -63,7 +63,10 @@ jobs:
           xcodebuild test \
             -project Aero.xcodeproj -scheme Aero -configuration Debug \
             -sdk iphonesimulator -destination "id=$SIM_UDID" -derivedDataPath build-tests \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tail -n 120
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee test-output.txt | tail -n 120
+      - name: Show each failed test and why
+        if: failure()
+        run: grep -E "error: -\[|' failed \(" test-output.txt || echo "no failed test lines found"
       - name: Print how long this job took
         if: always()
         run: echo "check job took $(( $(date +%s) - STARTED_AT )) seconds"
