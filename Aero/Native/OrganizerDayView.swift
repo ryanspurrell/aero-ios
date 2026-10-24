@@ -23,6 +23,8 @@ struct OrganizerDayScreen: View {
     var menuAction: () -> Void = {}
     @Namespace private var zoom
     @GestureState private var pinch: CGFloat = 1
+    /// The Shopping screen (Aero/Native/Shopping): the open things to buy and the lists as views. Drawn natively with or without a PC.
+    @State private var showShopping = false
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -70,6 +72,7 @@ struct OrganizerDayScreen: View {
             }
         )
         .task { await store.load() }
+        .fullScreenCover(isPresented: $showShopping) { ShoppingScreen(back: { showShopping = false }) }
     }
 
     private var nextDate: String? {
@@ -126,6 +129,7 @@ struct OrganizerDayScreen: View {
     /// Underline tabs around the one held date: Day, Week, Month, Year and Lists. With a PC, Lists opens the PC's own lists in the web view.
     private var tabs: some View {
         VStack(spacing: 0) {
+            ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 18) {
                 if store.answer?.mode == .simple {
                     tab("Today", selected: true) {}
@@ -136,8 +140,10 @@ struct OrganizerDayScreen: View {
                     if store.backendKind == .phone { tab(DayTab.lists.title, selected: store.tab == .lists) { Task { await switchTo(.lists) } } }
                 }
                 if store.backendKind == .pc { tab(DayTab.lists.title, selected: false) { openLists() } }
+                tab("Shopping", selected: false) { showShopping = true }
                 if let openChat { tab(ChatWords.tab, selected: false) { openChat() } }
                 Spacer(minLength: 0)
+            }
             }
             Rectangle().fill(Look.Palette.rule).frame(height: 2)
         }

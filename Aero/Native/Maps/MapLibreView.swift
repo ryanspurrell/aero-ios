@@ -105,7 +105,7 @@ struct MapLibreView: UIViewRepresentable {
             func areaSource() -> MLNShapeSource {
                 var shapes: [MLNShape & MLNFeature] = []
                 for p in overlay.places {
-                    var ring = MapsOverlay.circle(p.coordinate, metres: p.rad)
+                    var ring = MapsOverlay.area(of: p)
                     shapes.append(MLNPolygonFeature(coordinates: &ring, count: UInt(ring.count)))
                 }
                 return MLNShapeSource(identifier: "locareas", shape: MLNShapeCollectionFeature(shapes: shapes), options: nil)

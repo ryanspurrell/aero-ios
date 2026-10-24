@@ -47,6 +47,14 @@ struct MapsNow: Decodable, Equatable {
     }
 }
 
+/// A place's building outline: Core's `shape` ({"kind": "building", "ring": [[lat, lon], ...], "source"}), made by `fingus_core_location.py`
+/// `clean_shape` (3 to SHAPE_MAX_POINTS corners, not crossing itself) and kept as Systems/PlaceShape.lean's shape. A place with none is a circle.
+struct MapsShape: Decodable, Equatable {
+    var kind: String
+    var ring: [[Double]]
+    var source: String?
+}
+
 /// One of her places: Core's `places` row.
 struct MapsPlace: Decodable, Identifiable, Equatable {
     var id: String
@@ -56,7 +64,23 @@ struct MapsPlace: Decodable, Identifiable, Equatable {
     var rad: Double
     var home: MapsFlag?
     var source: String?
+    /// The building's outline when it has one (PlaceShape.lean: the shape decides home, and `rad` is only the size of the region the phone is
+    /// told to wake up for); nil for a circle.
+    var shape: MapsShape?
     var isHome: Bool { home?.on ?? false }
+    /// The outline's corners as map points, only when it is a building of three or more corners that are real places; nil otherwise, so the
+    /// place keeps its circle. The closing corner, when the ring repeats its first, is dropped (the drawing closes it itself).
+    var outline: [CLLocationCoordinate2D]? {
+        guard let shape, shape.kind == "building" else { return nil }
+        var corners: [CLLocationCoordinate2D] = []
+        for q in shape.ring {
+            guard q.count == 2, (-90.0...90.0).contains(q[0]), (-180.0...180.0).contains(q[1]) else { return nil }
+            corners.append(CLLocationCoordinate2D(latitude: q[0], longitude: q[1]))
+        }
+        if corners.count > 1, let a = corners.first, let b = corners.last, a.latitude == b.latitude, a.longitude == b.longitude { corners.removeLast() }
+        return corners.count >= 3 ? corners : nil
+    }
+    var hasShape: Bool { outline != nil }
     var coordinate: CLLocationCoordinate2D { CLLocationCoordinate2D(latitude: lat, longitude: lon) }
 }
 
@@ -277,7 +301,7 @@ enum MapsText {
                 value = m <= p.rad ? "Here" : String(format: "%.1f km", m / 1000)
             }
             return Row(id: p.id, title: p.name, value: value,
-                       note: "\(Int(p.rad.rounded())) m around it" + (p.source == "phone" ? " · From OwnTracks" : ""),
+                       note: (p.hasShape ? "Wake-up size \(Int(p.rad.rounded())) m" : "\(Int(p.rad.rounded())) m around it") + (p.source == "phone" ? " · From OwnTracks" : ""),
                        target: .place(lat: p.lat, lon: p.lon), isHome: p.isHome)
         }
     }

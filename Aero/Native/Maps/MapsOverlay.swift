@@ -35,6 +35,13 @@ struct MapsOverlay: Equatable {
         return o
     }
 
+    /// The outline drawn for a place: its building, closed, when it has one; otherwise the circle of its `rad` (a place without a shape keeps its
+    /// circle). Never both: a building's `rad` is only the wake-up size, not an area on the map.
+    static func area(of place: MapsPlace) -> [CLLocationCoordinate2D] {
+        if let corners = place.outline, let first = corners.first { return corners + [first] }
+        return circle(place.coordinate, metres: place.rad)
+    }
+
     /// A circle of `metres` round a point, as 48 steps (the web page's `locationCircle`).
     static func circle(_ centre: CLLocationCoordinate2D, metres: Double) -> [CLLocationCoordinate2D] {
         (0...48).map { i in
