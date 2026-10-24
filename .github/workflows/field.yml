@@ -1,0 +1,112 @@
+name: Field iOS
+
+# The Field app (second target in project.yml): builds for the iOS Simulator, runs FieldTests, and saves simulator screenshots of its main
+# screens (iPhone and iPad) as an artifact. It has no upload step: nothing here signs or sends a build to TestFlight. A first upload needs an
+# App Store Connect entry for the Field bundle identifier, made by hand.
+on:
+  push:
+    branches: [field-app]
+  workflow_dispatch:
+
+env:
+  XCODE_PATH: /Applications/Xcode_26.2.app
+  # Repository variable, with a neutral default. Used for the screenshot build; the tests run under the project's own identifiers.
+  FIELD_BUNDLE_ID: ${{ vars.FIELD_BUNDLE_ID || 'com.example.field' }}
+
+jobs:
+  field:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Note start time
+        run: echo "STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
+      - name: Field has no network, web, map or location code
+        run: |
+          set -eu
+          pattern='import (CoreLocation|Network|WebKit|MapKit|MapLibre|CFNetwork)|URLSession|URLRequest|CLLocation|NWConnection|WKWebView|NSLocation'
+          if grep -nE "$pattern" -r Field Aero/Native/Tokens.swift Aero/Native/FingusUI.swift; then
+            echo "Field must stay free of network, web and location code." >&2; exit 1
+          fi
+          echo "none found"
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_PATH"
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: xcodegen generate
+      - name: Field asks for no location, camera, microphone or photos
+        run: |
+          set -eu
+          if grep -n -E "NSLocation|NSCamera|NSMicrophone|NSPhotoLibrary" Field/Info.plist; then exit 1; fi
+          echo "no usage texts"
+      - name: Pick an iPhone and an iPad simulator
+        run: |
+          set -eu
+          xcrun simctl list devices available -j > devices.json
+          pick() { python3 -c '
+          import json, sys
+          prefix, avoid = sys.argv[1], sys.argv[2].split(",")
+          for runtime, devices in json.load(open("devices.json"))["devices"].items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith(prefix) and not any(a and a in d["name"] for a in avoid):
+                          print(d["udid"]); raise SystemExit
+          ' "$1" "$2"; }
+          phone="$(pick iPhone 'Pro,Air,Plus,Max')"
+          pad="$(pick iPad 'mini')"
+          test -n "$phone" && test -n "$pad"
+          echo "PHONE_UDID=$phone" >> "$GITHUB_ENV"
+          echo "PAD_UDID=$pad" >> "$GITHUB_ENV"
+          xcrun simctl list devices available | grep -E "$phone|$pad"
+      - name: Run FieldTests in the iPhone simulator
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Aero.xcodeproj -scheme Field -configuration Debug \
+            -sdk iphonesimulator -destination "id=$PHONE_UDID" -derivedDataPath build-field-tests \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee test-output.txt | tail -n 60
+      - name: Count the tests
+        run: |
+          grep -E "Executed [0-9]+ tests?, with [0-9]+ failures?" test-output.txt | tail -n 1
+          grep -E "Executed [0-9]+ tests?, with 0 failures" test-output.txt | tail -n 1
+      - name: Show each failed test and why
+        if: failure()
+        run: grep -E "error: |' failed \(" test-output.txt | head -n 80 || echo "no failed test lines found"
+      - name: Build the app for the simulator (configured identifier)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project Aero.xcodeproj -scheme Field -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build-field \
+            ARCHS=arm64 ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+            PRODUCT_BUNDLE_IDENTIFIER="$FIELD_BUNDLE_ID" 2>&1 | tail -n 20
+      - name: Screenshots on iPhone and iPad
+        run: |
+          set -eu
+          app="build-field/Build/Products/Debug-iphonesimulator/Field.app"
+          test -d "$app"
+          mkdir -p screenshots
+          for kind in iphone ipad; do
+            if [ "$kind" = iphone ]; then udid="$PHONE_UDID"; else udid="$PAD_UDID"; fi
+            xcrun simctl boot "$udid" || true
+            xcrun simctl bootstatus "$udid" -b
+            xcrun simctl ui "$udid" appearance light || true
+            xcrun simctl install "$udid" "$app"
+            for screen in board trip custody situation report add settings; do
+              xcrun simctl launch "$udid" "$FIELD_BUNDLE_ID" -FieldSeed 1 -FieldScreen "$screen"
+              sleep 4
+              xcrun simctl io "$udid" screenshot "screenshots/$kind-$screen.png"
+              xcrun simctl terminate "$udid" "$FIELD_BUNDLE_ID" || true
+            done
+            xcrun simctl shutdown "$udid" || true
+          done
+          ls -l screenshots
+      - name: Save the screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: field-screenshots
+          path: screenshots/*.png
+          if-no-files-found: error
+      - name: Print how long this job took
+        if: always()
+        run: echo "field job took $(( $(date +%s) - STARTED_AT )) seconds"
