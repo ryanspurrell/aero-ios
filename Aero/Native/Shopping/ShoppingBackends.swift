@@ -262,7 +262,8 @@ final class PhoneShopping: ShoppingBackend {
         let book = try phone.store.book()
         guard let lid = Self.find(lists, list) else { throw Refusal("no such list") }
         guard let oid = book.find(thing) else { throw Refusal("only a thing to buy goes in a shopping list") }
-        lists[lid]?.ids = (lists[lid]?.ids ?? []).filter { $0 != oid }       // the id leaves the set, the item stays
+        let left = (lists[lid]?.ids ?? []).filter { $0 != oid }              // the id leaves the set, the item stays
+        lists[lid]?.ids = left
         try keeper.write(lists)
     }
 
