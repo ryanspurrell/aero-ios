@@ -1,17 +1,22 @@
 name: Field iOS
 
 # The Field app (second target in project.yml): builds for the iOS Simulator, runs FieldTests, and saves simulator screenshots of its main
-# screens (iPhone and iPad) as an artifact. It has no upload step: nothing here signs or sends a build to TestFlight. A first upload needs an
-# App Store Connect entry for the Field bundle identifier, made by hand.
+# screens (iPhone and iPad) as an artifact. Uploading to TestFlight happens only when started by hand with upload=true (the same three App
+# Store Connect secrets and APPLE_TEAM_ID as Aero's workflow); Aryn made the App Store Connect entry for ca.fingus.field on 2026-10-23.
 on:
   push:
     branches: [field-app]
   workflow_dispatch:
+    inputs:
+      upload:
+        description: "Also sign and upload a build to TestFlight"
+        type: boolean
+        default: false
 
 env:
   XCODE_PATH: /Applications/Xcode_26.2.app
   # Repository variable, with a neutral default. Used for the screenshot build; the tests run under the project's own identifiers.
-  FIELD_BUNDLE_ID: ${{ vars.FIELD_BUNDLE_ID || 'com.example.field' }}
+  FIELD_BUNDLE_ID: ${{ vars.FIELD_BUNDLE_ID || 'ca.fingus.field' }}
 
 jobs:
   field:
@@ -111,3 +116,69 @@ jobs:
       - name: Print how long this job took
         if: always()
         run: echo "field job took $(( $(date +%s) - STARTED_AT )) seconds"
+
+  gate:
+    # As in Aero's workflow: secrets cannot be tested in a job-level condition, so they are tested here.
+    runs-on: ubuntu-latest
+    outputs:
+      ready: ${{ steps.test.outputs.ready }}
+    steps:
+      - id: test
+        env:
+          WANT: ${{ inputs.upload }}
+          KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ISSUER: ${{ secrets.ASC_ISSUER_ID }}
+          KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          TEAM: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          if [ "$WANT" = "true" ] && [ -n "$KEY_ID" ] && [ -n "$ISSUER" ] && [ -n "$KEY_P8" ] && [ -n "$TEAM" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "Upload skipped: not asked for, or a secret or APPLE_TEAM_ID is missing."
+          fi
+
+  testflight:
+    needs: [field, gate]
+    if: needs.gate.outputs.ready == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s "$XCODE_PATH"
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the Xcode project
+        run: xcodegen generate
+      - name: Archive and upload
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+          TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          set -eu
+          umask 077
+          key_file="$(mktemp "$RUNNER_TEMP/asc-key.XXXXXX")"
+          trap 'rm -f "$key_file"' EXIT
+          printf '%s' "$ASC_KEY_P8" > "$key_file"
+          settings=(PRODUCT_BUNDLE_IDENTIFIER="$FIELD_BUNDLE_ID" CURRENT_PROJECT_VERSION="$RUN_NUMBER" DEVELOPMENT_TEAM="$TEAM_ID")
+          auth=(-allowProvisioningUpdates -authenticationKeyPath "$key_file" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+          </dict>
+          </plist>
+          PLIST
+          xcodebuild archive -project Aero.xcodeproj -scheme Field -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Field.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO "${settings[@]}"
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Field.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" "${auth[@]}"

@@ -121,6 +121,8 @@ targets:
       - path: Aero/Native/Tokens.swift
       - path: Aero/Native/FingusUI.swift
       - path: Aero/Resources/Fonts/exo2.ttf
+      # The app icon is Aero's Fingus head, shared by path, as a placeholder until Aryn picks Field's own (2026-10-23).
+      - path: Aero/Assets.xcassets
     info:
       path: Field/Info.plist
       properties:
@@ -143,10 +145,10 @@ targets:
       base:
         PRODUCT_NAME: Field
         FIELD_DISPLAY_NAME: Field
-        # Placeholder. The workflow overrides it from the repository variable FIELD_BUNDLE_ID. It cannot change after a first upload.
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.field
+        # Registered by Aryn on 2026-10-23 with its App Store Connect entry. It cannot change after a first upload.
+        PRODUCT_BUNDLE_IDENTIFIER: ca.fingus.field
         TARGETED_DEVICE_FAMILY: "1,2"
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     scheme:
       testTargets:
         - FieldTests
@@ -161,5 +163,5 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.field.tests
+        PRODUCT_BUNDLE_IDENTIFIER: ca.fingus.field.tests
         PRODUCT_NAME: FieldTests
