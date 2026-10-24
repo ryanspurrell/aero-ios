@@ -109,3 +109,59 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         PRODUCT_BUNDLE_IDENTIFIER: com.example.aero.tests
         PRODUCT_NAME: AeroTests
+
+  # Field: a separate app (iPhone and iPad) for air-sampling field work. It displays one board and keeps every record on the device. It has no
+  # network code and asks for no location. The rules are in Field/Model and mirror FieldSample.lean. It shares only Aero's look, by path.
+  Field:
+    type: application
+    platform: iOS
+    sources:
+      - path: Field
+      # Aero's tokens and bubble look, shared by path (not copied): the same files Aero compiles.
+      - path: Aero/Native/Tokens.swift
+      - path: Aero/Native/FingusUI.swift
+      - path: Aero/Resources/Fonts/exo2.ttf
+      # The app icon is Aero's Fingus head, shared by path, as a placeholder until Aryn picks Field's own (2026-10-23).
+      - path: Aero/Assets.xcassets
+    info:
+      path: Field/Info.plist
+      properties:
+        CFBundleDisplayName: "$(FIELD_DISPLAY_NAME)"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIAppFonts:
+          - exo2.ttf
+        # No camera, microphone, photo, location or network use: no usage text is asked for because none is used.
+        ITSAppUsesNonExemptEncryption: false
+    settings:
+      base:
+        PRODUCT_NAME: Field
+        FIELD_DISPLAY_NAME: Field
+        # Registered by Aryn on 2026-10-23 with its App Store Connect entry. It cannot change after a first upload.
+        PRODUCT_BUNDLE_IDENTIFIER: ca.fingus.field
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    scheme:
+      testTargets:
+        - FieldTests
+
+  FieldTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FieldTests
+    dependencies:
+      - target: Field
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: ca.fingus.field.tests
+        PRODUCT_NAME: FieldTests
