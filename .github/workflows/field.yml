@@ -71,7 +71,8 @@ jobs:
           grep -E "Executed [0-9]+ tests?, with 0 failures" test-output.txt | tail -n 1
       - name: Show each failed test and why
         if: failure()
-        run: grep -E "error: |' failed \(" test-output.txt | head -n 80 || echo "no failed test lines found"
+        run: |
+          grep -E "error: |' failed \(" test-output.txt | head -n 80 || echo "no failed test lines found"
       - name: Build the app for the simulator (configured identifier)
         run: |
           set -o pipefail
