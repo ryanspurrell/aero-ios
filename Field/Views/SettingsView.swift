@@ -49,7 +49,7 @@ struct NumbersCard: View {
     }
 
     private func row(_ title: String, _ why: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Look.Space.hairline) {
             Text(title).ft(Look.Size.rowTitle, style: .body).foregroundStyle(Look.Palette.fg)
             Text(why).ft(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
         }

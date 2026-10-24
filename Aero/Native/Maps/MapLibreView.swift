@@ -186,7 +186,7 @@ struct MapLibreView: UIViewRepresentable {
             guard look.serial != lastSerial, let map else { return }
             guard styleLoaded else { pendingLook = look; return }
             lastSerial = look.serial
-            let pad = UIEdgeInsets(top: 60, left: 40, bottom: 40, right: 40)
+            let pad = Look.Space.mapFit
             func fit(_ pts: [CLLocationCoordinate2D]) -> Bool {
                 guard let first = pts.first else { return false }
                 if pts.count == 1 { map.setCenter(first, zoomLevel: 15, animated: true); return true }

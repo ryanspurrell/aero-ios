@@ -181,6 +181,37 @@ enum Look {
         static let inset: CGFloat = 12
         /// your choice: From the mock (the smallest step: between a title and the line under it (organizer_item_bubbly .n and .m)): 4 points. A screen uses these and no other paddings or gaps.
         static let hair: CGFloat = 4
+        // The steps below were added 2026-10-23 (branch native-padding), after "not enough padding in places, and lots of inconsistent padding" (Aryn,
+        // 2026-10-23 9:09 pm): views had raw numbers beside the steps above. Every padding, spacing and inset in a view is now one of these names;
+        // AeroTests/SpacingTests fails on a raw number. Sources read 2026-10-23: Apple's Human Interface Guidelines, Layout
+        // (developer.apple.com/design/human-interface-guidelines/layout, read as the page's published JSON on that date). It says to respect the safe
+        // area, "respecting system-defined safe areas, margins, and guides", and "Use consistent spacing"; it states NO point value for an iPhone
+        // margin and does not mention an 8-point grid (the only numbers on that page are tvOS ones). So the 8-point grid and a 16 or 20 point margin
+        // are common iOS practice, not Apple's words, and are not claimed here: the steps keep the mock values the owner approved (22 side, 16, 14,
+        // 12, 8, 4). Where the mock's values are off an 8-point grid (22, 14, 12, 11) the mock's are kept, as phone_design_conventions.md decides.
+        /// picked, not grounded: the finest gap, between two lines of one label and between photo tiles; half of `hair`. Replaces raw 1 and 2.
+        static let hairline: CGFloat = 2
+        /// picked, not grounded: the small step between `hair` (4) and `tight` (8) for padding inside a small chip, a pill, a day cell or a badge on a
+        /// tile; 6. Replaces the raw 5, 6, 7 and the sums `hair + 2`.
+        static let chip: CGFloat = 6
+        /// picked, not grounded: two lines drawn one on the other, the AM under a clock time (-1 point), so the pair reads as one.
+        static let tuck: CGFloat = -1
+        /// picked, not grounded: from the mock, where the red Now line starts to the left of the blocks (34 points left of `blockX`).
+        static let nowLead: CGFloat = 34
+        /// picked, not grounded: the top offset of a loading mark or an empty-state line, twice `gutter`. Replaces raw 40 and 64.
+        static let section: CGFloat = 44
+        /// your choice: a floating control (the box at the bottom, Field's "Add a pump") is treated as one more block of the mock, so content keeps
+        /// `gap` (14, organizer_item_bubbly's gap between two blocks) above it. The scroll's bottom inset is the control's own height (the system
+        /// measures it: `safeAreaInset`) plus this; it replaces the raw 120.
+        static let clearance: CGFloat = Space.gap
+        /// your choice: the gap between a floating control and the bottom of the screen's safe area: `tight` (8), as the home mock's box sits.
+        static let floatBottom: CGFloat = Space.tight
+        /// a source: 54 points is three quarters of an inch (72 points to the inch), the margin of a printed page (the custody sheet's PDF).
+        static let printMargin: CGFloat = 54
+        /// picked, not grounded: the room a map keeps round the places it fits in view: `section` at the sides and bottom, `section + pad` at the top.
+        static let mapFit = UIEdgeInsets(top: Space.section + Space.pad, left: Space.section, bottom: Space.section, right: Space.section)
+        /// picked, not grounded: the width a chat's title keeps clear on each side for the Back and menu keys: two taps (`sizeTap`) and a `gutter`.
+        static let titleReserve: CGFloat = Space.sizeTap * 2 + Space.gutter
         /// your choice: From the mock (organizer_item_bubbly, a block is at least 52 high; every button of one group is this size): 52 points. A screen uses these and no other paddings or gaps.
         static let sizeControl: CGFloat = 52
         /// a source: Apple's Human Interface Guidelines, Layout: a tap target is at least 44 by 44 points (the arrows, the mic key).

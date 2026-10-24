@@ -118,7 +118,7 @@ struct StatePill: View {
         Label(text, systemImage: symbol)
             .ft(Look.Size.pill, style: .footnote)
             .foregroundStyle(Look.Palette.ink)
-            .padding(.horizontal, Look.Space.snug).padding(.vertical, Look.Space.hair + 2)
+            .padding(.horizontal, Look.Space.snug).padding(.vertical, Look.Space.chip)
             .background(Capsule().fill(Look.Palette.card.opacity(0.85)))
     }
 }
@@ -158,7 +158,7 @@ struct FieldPage<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Look.Space.gap) { content }
                 .padding(.horizontal, Look.Space.gutter)
-                .padding(.vertical, Look.Space.pad)
+                .padding(.top, Look.Space.pad).padding(.bottom, Look.Space.clearance)
                 .frame(maxWidth: 820, alignment: .leading)
                 .frame(maxWidth: .infinity)
         }

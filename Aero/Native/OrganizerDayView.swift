@@ -27,8 +27,7 @@ struct OrganizerDayScreen: View {
     @State private var showShopping = DemoMode.page == "shopping"
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 topRow
                 tabs.padding(.horizontal, Look.Space.gutter)
                 ScrollView(showsIndicators: false) {
@@ -43,15 +42,18 @@ struct OrganizerDayScreen: View {
                         }
                         content
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Look.Space.gutter)
-                    .padding(.top, 14)
-                    .padding(.bottom, 120)
+                    .padding(.top, Look.Space.gap)
+                    .padding(.bottom, Look.Space.clearance)
                 }
-            }
-            // one box at the bottom, on every tab: a line typed for another day is saved for that day wherever the person is
+        }
+        // one box at the bottom, on every tab: a line typed for another day is saved for that day wherever the person is. It is a safe-area inset,
+        // so the scroll stops above it by its measured height; the page adds only `clearance` (padding at the cause: it was a guessed 120).
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             NewBox(onAdded: { Task { await store.load() } }, holding: store.date,
                    onShow: { day in Task { await store.move(span: .day, date: day) } })
-                .padding(.horizontal, Look.Space.gutter).padding(.bottom, 8)
+                .padding(.horizontal, Look.Space.gutter).padding(.bottom, Look.Space.floatBottom)
         }
         .fingusGround()
         .toolbar(.hidden, for: .navigationBar)
@@ -130,7 +132,7 @@ struct OrganizerDayScreen: View {
     private var tabs: some View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 18) {
+            HStack(spacing: Look.Space.pad) {
                 if store.answer?.mode == .simple {
                     tab("Today", selected: true) {}
                 } else {
@@ -153,7 +155,7 @@ struct OrganizerDayScreen: View {
         Button(action: action) {
             Text(title).fx(Look.Size.tab, style: .subheadline)
                 .foregroundStyle(selected ? Look.Palette.fg : Look.Palette.soft)
-                .padding(.vertical, 10)
+                .padding(.vertical, Look.Space.snug)
                 .overlay(alignment: .bottom) { if selected { Rectangle().fill(Look.Palette.fg).frame(height: 3).offset(y: 1) } }
                 .frame(minHeight: Look.Space.sizeTap)
         }
@@ -182,7 +184,7 @@ struct OrganizerDayScreen: View {
             case .year: if let y = a.year { YearView(year: y, selected: a.date, store: store, zoom: zoom) }
             }
         } else if store.failure == nil {
-            ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+            ProgressView().frame(maxWidth: .infinity).padding(.top, Look.Space.section)
         }
     }
 }
@@ -199,7 +201,7 @@ struct PeriodHeader: View {
     let today: () -> Void
 
     var body: some View {
-        VStack(spacing: Look.Space.hair / 2) {
+        VStack(spacing: Look.Space.hairline) {
             HStack {
                 Button(action: prev) { Image(systemName: "chevron.left").font(.system(size: 17, weight: .semibold)).foregroundStyle(Look.Palette.soft).frame(width: Look.Space.sizeTap, height: Look.Space.sizeTap) }
                     .accessibilityLabel("Previous")
@@ -255,7 +257,7 @@ struct SimpleDayView: View {
     var body: some View {
         let s = day.simple
         let ordered = TieOrder.firstNextItem(s, rightToLeft: direction == .rightToLeft)
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: Look.Space.pad) {
             Text(s.greeting).fx(TypeToken(size: 32, weight: 800), style: .largeTitle).foregroundStyle(Look.Palette.fg)
             Text(s.clock).fx(Look.Size.nextMeta, style: .title3).foregroundStyle(Look.Palette.soft)
             if let waiting = (day.rows + day.anytime).first(where: { $0.question != nil }) { PointerView(pointer: Pointer(waiting), size: .question, actions: .day(store, open: open)) }
@@ -279,7 +281,7 @@ struct SimpleDayView: View {
             if !also.isEmpty {
                 Text("Also then: " + also.joined(separator: ", ")).fx(Look.Size.nextMeta, style: .subheadline).foregroundStyle(Look.Palette.label)
             }
-            HStack(spacing: 10) {
+            HStack(spacing: Look.Space.snug) {
                 Button {
                     if n.source == "colony" { open(n.open); return }
                     Task { if await store.setDone(n.open.id, done: !done, occurrence: n.occurrence, presented: Presentation.presented(Presentation.nextCard, pointer: "done"), rev: n.rev) { done.toggle() } }
@@ -299,7 +301,7 @@ struct SimpleDayView: View {
                     } label: {
                         Text(skipped ? "Skipped" : "Skip").fx(Look.Size.nextMeta, style: .headline)
                             .foregroundStyle(Look.Palette.ink).opacity(0.75)
-                            .frame(minHeight: 64).padding(.horizontal, 14)
+                            .frame(minHeight: 64).padding(.horizontal, Look.Space.gap)
                     }
                     .buttonStyle(BubblePressStyle())
                     .disabled(skipped)
@@ -307,7 +309,7 @@ struct SimpleDayView: View {
                 }
             }
         }
-        .padding(20)
+        .padding(Look.Space.gutter)
         .frame(maxWidth: .infinity, alignment: .leading)
         .bubble(n.color, radius: Look.Bubble.radiusNext)
         .opacity(skipped ? 0.6 : 1)
@@ -318,7 +320,7 @@ struct SimpleDayView: View {
             Text(title).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
             ForEach(lines) { Text(($0.title ?? "") + ($0.timeText.flatMap { $0.isEmpty ? nil : " · " + $0 } ?? "")).fx(Look.Size.nextMeta, style: .title3).foregroundStyle(Look.Palette.fg) }
         }
-        .padding(16)
+        .padding(Look.Space.pad)
         .frame(maxWidth: .infinity, alignment: .leading)
         .fingusCard()
     }
@@ -400,13 +402,13 @@ struct MonthView: View {
                         if cur == c.date { Task { await store.move(span: .day, date: c.date) } } else { picked = c.date }
                     } label: {
                         ZStack(alignment: .topLeading) {
-                            Text("\(c.day)").fx(Look.Size.cell, style: .footnote).padding(6)
+                            Text("\(c.day)").fx(Look.Size.cell, style: .footnote).padding(Look.Space.chip)
                                 .foregroundStyle(c.inMonth ? Look.Palette.fg : Look.Palette.dim)
                             HStack(spacing: Look.Space.hair) {
                                 ForEach(c.pills.prefix(3)) { PointerView(pointer: Pointer($0), size: .dot) }
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.leading, 6).padding(.bottom, 7)
-                            if c.question { Text("?").fx(Look.Size.cell, style: .footnote).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(6) }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading).padding(.leading, Look.Space.chip).padding(.bottom, Look.Space.chip)
+                            if c.question { Text("?").fx(Look.Size.cell, style: .footnote).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing).padding(Look.Space.chip) }
                         }
                         .aspectRatio(1, contentMode: .fit)                  // square days
                         .background { if c.inMonth { RoundedRectangle(cornerRadius: Look.Bubble.radiusCell, style: .continuous).fill(Look.Palette.card) } }
@@ -433,7 +435,7 @@ struct MonthView: View {
                 .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.inset)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fingusCard(radius: Look.Bubble.radiusRow)
-                .padding(.top, 2)
+                .padding(.top, Look.Space.hairline)
             }
         }
     }
@@ -469,7 +471,7 @@ struct YearView: View {
                         VStack(alignment: .leading, spacing: Look.Space.tight) {
                             HStack { Text(m.name).fx(Look.Size.yearMonth, style: .subheadline).foregroundStyle(Look.Palette.fg); if m.days.contains(where: { $0.question }) { Text("?").fx(Look.Size.cell, style: .footnote).foregroundStyle(Look.Palette.soft) } }
                             // shade only: a square a day, darker is fuller
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Look.Space.hair / 2), count: 7), spacing: Look.Space.hair / 2) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: Look.Space.hairline), count: 7), spacing: Look.Space.hairline) {
                                 ForEach(0..<m.offset, id: \.self) { _ in Color.clear.frame(height: Look.Space.sizeHeat) }
                                 ForEach(m.days) { d in
                                     RoundedRectangle(cornerRadius: 2)
@@ -480,7 +482,7 @@ struct YearView: View {
                                 }
                             }
                         }
-                        .padding(10)
+                        .padding(Look.Space.snug)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .fingusCard(radius: Look.Bubble.radiusRow)
                         .overlay(RoundedRectangle(cornerRadius: Look.Bubble.radiusRow, style: .continuous).strokeBorder(Look.Palette.now, lineWidth: m.now ? 3 : 0))
@@ -522,13 +524,13 @@ struct NewBox: View {
                     .focused($focused)
                     .onSubmit { submit() }
                     .accessibilityIdentifier("quick-add-field")
-                    .padding(.leading, 22)
+                    .padding(.leading, Look.Space.gutter)
                 Button { focused = true } label: {
                     Image(systemName: "mic.fill").font(.system(size: 17, weight: .bold)).foregroundStyle(Look.Palette.ink)
                         .frame(width: Look.Space.sizeTap, height: Look.Space.sizeTap).background(Circle().fill(Look.Palette.accent))
                 }
                 .buttonStyle(BubblePressStyle())
-                .padding(.trailing, 7)
+                .padding(.trailing, Look.Space.chip)
                 .accessibilityLabel("Dictate")
             }
             .frame(height: Look.Space.sizeInput)
@@ -625,7 +627,7 @@ struct ListsView: View {
                     }
                 }
             } else {
-                ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+                ProgressView().frame(maxWidth: .infinity).padding(.top, Look.Space.section)
             }
         }
     }

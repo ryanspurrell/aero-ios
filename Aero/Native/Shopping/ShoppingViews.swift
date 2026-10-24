@@ -15,12 +15,12 @@ struct ShopTabs: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 18) {
+                HStack(spacing: Look.Space.pad) {
                     ForEach(tabs) { t in
                         Button { select(t.id) } label: {
                             Text(t.title).fx(Look.Size.tab, style: .subheadline)
                                 .foregroundStyle(selected == t.id ? Look.Palette.fg : Look.Palette.soft)
-                                .padding(.vertical, 10)
+                                .padding(.vertical, Look.Space.snug)
                                 .overlay(alignment: .bottom) { if selected == t.id { Rectangle().fill(Look.Palette.fg).frame(height: 3).offset(y: 1) } }
                                 .frame(minHeight: Look.Space.sizeTap)
                         }
@@ -55,8 +55,7 @@ struct ShoppingScreen: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 topRow
                 Text("Shopping").fx(Look.Size.title, style: .title2).foregroundStyle(Look.Palette.fg)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, Look.Space.gutter).padding(.bottom, Look.Space.tight)
@@ -68,11 +67,15 @@ struct ShoppingScreen: View {
                 }
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Look.Space.snug) { content }
-                        .padding(.horizontal, Look.Space.gutter).padding(.top, 14).padding(.bottom, 120)
+                        // full width, leading: without it the column is as wide as its widest line and sits centred, so a short line starts
+                        // further in than the title above it (seen in the first Shopping picture, 2026-10-23)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Look.Space.gutter).padding(.top, Look.Space.gap).padding(.bottom, Look.Space.clearance)
                 }
-            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             NewBox(onAdded: { Task { await model.load() } })
-                .padding(.horizontal, Look.Space.gutter).padding(.bottom, 8)
+                .padding(.horizontal, Look.Space.gutter).padding(.bottom, Look.Space.floatBottom)
         }
         .fingusGround()
         .toolbar(.hidden, for: .navigationBar)
@@ -119,7 +122,7 @@ struct ShoppingScreen: View {
             }
         }
         if !model.loaded {
-            if model.failure == nil { ProgressView().frame(maxWidth: .infinity).padding(.top, 40) }
+            if model.failure == nil { ProgressView().frame(maxWidth: .infinity).padding(.top, Look.Space.section) }
         } else if model.shown.isEmpty && model.failure == nil {
             Text(model.listId.isEmpty ? "Nothing to buy. Type it in the box below." : "Nothing in this list now").fx(Look.Size.calm, style: .subheadline)
                 .foregroundStyle(Look.Palette.soft)
@@ -168,7 +171,7 @@ struct ThingRow: View {
                 }
             }
         }
-        .padding(Look.Space.pad - 4).fingusCard(radius: Look.Bubble.radiusRow)
+        .padding(Look.Space.snug).fingusCard(radius: Look.Bubble.radiusRow)
         .accessibilityElement(children: .contain)
     }
 
@@ -179,7 +182,7 @@ struct ThingRow: View {
                 Text(title).fx(Look.Size.pill, style: .footnote).lineLimit(1)
             }
             .foregroundStyle(Look.Palette.fg)
-            .padding(.horizontal, Look.Space.tight + 2).frame(minHeight: Look.Space.sizeTap - 8)
+            .padding(.horizontal, Look.Space.snug).frame(minHeight: Look.Space.sizeTap - 8)
             .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusChip, style: .continuous).fill(Look.Palette.accent.opacity(0.35)))
         }
         .buttonStyle(BubblePressStyle())

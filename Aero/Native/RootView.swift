@@ -84,7 +84,7 @@ struct RootView: View {
                 .fullScreenCover(isPresented: $showWeb, onDismiss: { webClosed += 1 }) {
                     ZStack(alignment: .topTrailing) {
                         WebScreen().ignoresSafeArea()
-                        Button("Close") { showWeb = false }.padding().buttonStyle(.borderedProminent)
+                        Button("Close") { showWeb = false }.padding(Look.Space.pad).buttonStyle(.borderedProminent)
                     }
                 }
             }

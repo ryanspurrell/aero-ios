@@ -44,12 +44,17 @@ struct BoardView: View {
                         }
                     }
                 }
-                Color.clear.frame(height: Look.Space.sizeControl + Look.Space.gap)
             }
             .safeAreaInset(edge: .bottom) {
+                // A floating key: the scroll stops above it by its measured height (this is a safe-area inset) plus `clearance`; the page colour
+                // behind it keeps a card scrolling under it from showing through the gap (the first phone test: "bottom card ... very close").
                 FieldButton(title: "Add a pump", symbol: "plus") { sheet = .add }
-                    .padding(.horizontal, Look.Space.gutter).padding(.bottom, Look.Space.tight)
+                    .padding(.horizontal, Look.Space.gutter)
                     .frame(maxWidth: 820)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Look.Space.tight).padding(.bottom, Look.Space.floatBottom)
+                    .background(Look.Palette.page.opacity(0.92))
+                    .overlay(alignment: .top) { Rectangle().fill(Look.Palette.line).frame(height: 1) }
             }
             .toolbar(.hidden, for: .navigationBar)
         }

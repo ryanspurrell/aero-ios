@@ -23,8 +23,8 @@ shoot month -aero-demo-screen month
 shoot shopping -aero-demo-page shopping
 shoot chatlist -aero-demo-page chatlist
 shoot chat -aero-demo-page chat
-shoot partshome -FingusPartsHome YES -AeroServerAddress http://127.0.0.1:9
-shoot location -FingusPartsHome YES -AeroServerAddress http://127.0.0.1:9 -aero-demo-page location
+shoot partshome -FingusPartsHome YES -FingusAddedParts organizer,messages,photos,location -AeroServerAddress http://127.0.0.1:9
+shoot location -FingusPartsHome YES -FingusAddedParts organizer,messages,photos,location -AeroServerAddress http://127.0.0.1:9 -aero-demo-page location
 shoot you -aero-demo-page you
 xcrun simctl shutdown "$udid" || true
 ls -l "$out"

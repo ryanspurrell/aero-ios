@@ -161,7 +161,7 @@ struct SpineRow<Content: View>: View {
 
     var body: some View {
         HStack(alignment: centered ? .center : .top, spacing: 0) {
-            ClockText(text: timeText).frame(width: metrics.timeWidth, alignment: .trailing).padding(.top, centered ? 0 : 14)
+            ClockText(text: timeText).frame(width: metrics.timeWidth, alignment: .trailing).padding(.top, centered ? 0 : Look.Space.gap)
             Color.clear.frame(width: metrics.blockX - metrics.timeWidth, height: 1)
             content
         }
@@ -176,7 +176,7 @@ struct ClockText: View {
     let text: String
     var body: some View {
         let parts = text.split(separator: " ").map(String.init)
-        VStack(alignment: .trailing, spacing: -1) {
+        VStack(alignment: .trailing, spacing: Look.Space.tuck) {
             Text(parts.first ?? text).fx(Look.Size.spineTime, style: .footnote).foregroundStyle(Look.Palette.soft)
             if parts.count > 1 { Text(parts[1]).font(Fingus.font(TypeToken(size: 10, weight: 700), style: .caption2)).foregroundStyle(Look.Palette.soft.opacity(0.8)) }
         }
@@ -194,7 +194,7 @@ struct SpineColumn<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: spacing) { content }
             .background(alignment: .topLeading) {
-                Capsule().fill(Look.Palette.line).frame(width: 3).padding(.vertical, 10).offset(x: metrics.lineX - 1.5)
+                Capsule().fill(Look.Palette.line).frame(width: 3).padding(.vertical, Look.Space.snug).offset(x: metrics.lineX - 1.5)
             }
     }
 }
@@ -205,9 +205,9 @@ struct NowRow: View {
     let timeText: String
     var body: some View {
         ZStack(alignment: .leading) {
-            Rectangle().fill(Look.Palette.now).frame(height: 2).padding(.leading, metrics.blockX - 34)
+            Rectangle().fill(Look.Palette.now).frame(height: 2).padding(.leading, metrics.blockX - Look.Space.nowLead)
             Text("Now").fx(Look.Size.now, style: .caption1)
-                .padding(.horizontal, Look.Space.tight).padding(.vertical, Look.Space.hair / 2)
+                .padding(.horizontal, Look.Space.tight).padding(.vertical, Look.Space.hairline)
                 .background(Capsule().fill(Look.Palette.now))
                 .foregroundStyle(.white)
         }
@@ -223,7 +223,7 @@ struct FreeRow: View {
     let text: String
     var body: some View {
         Text(text).fx(Look.Size.free, style: .footnote).italic().foregroundStyle(Look.Palette.soft)
-            .padding(.leading, metrics.blockX - 16)
+            .padding(.leading, metrics.blockX - Look.Space.pad)
     }
 }
 

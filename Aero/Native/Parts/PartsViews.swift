@@ -106,6 +106,7 @@ struct PartsHomeScreen: View {
                             }
                         }
                         .padding(.horizontal, Look.Space.gutter)
+                        .padding(.top, Look.Space.gap).padding(.bottom, Look.Space.gutter)
                     }
                 }
             }

@@ -158,6 +158,8 @@ targets:
     platform: iOS
     sources:
       - path: FieldTests
+      # the same spacing check as Aero's: it reads the Aero and Field source folders from its own path
+      - path: AeroTests/SpacingTests.swift
     dependencies:
       - target: Field
     settings:

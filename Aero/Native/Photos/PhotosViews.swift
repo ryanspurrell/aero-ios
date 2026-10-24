@@ -172,7 +172,7 @@ struct PhotosGridPage: View {
     let spot: String?
     let spotToken: Int
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 2), count: 3)
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: Look.Space.hairline), count: 3)
 
     var body: some View {
         switch model.phase {
@@ -214,7 +214,7 @@ struct PhotosGridPage: View {
     @ViewBuilder
     private func section(_ month: PhotoMonth) -> some View {
         if let items = model.items[month.month] {
-            LazyVGrid(columns: columns, spacing: 2) {
+            LazyVGrid(columns: columns, spacing: Look.Space.hairline) {
                 ForEach(items) { item in
                     Button { open(item) } label: {
                         tile(item)
@@ -241,14 +241,14 @@ struct PhotosGridPage: View {
             .aspectRatio(1, contentMode: .fit)
             .overlay(PhotoPicture(images: images, id: item.id, version: item.version, what: "thumbnail", covered: item.covered))
             .overlay(alignment: .bottomLeading) {
-                if item.favourite { Image(systemName: "heart.fill").font(.system(size: 11)).foregroundStyle(.white).shadow(radius: 2).padding(5) }
+                if item.favourite { Image(systemName: "heart.fill").font(.system(size: 11)).foregroundStyle(.white).shadow(radius: 2).padding(Look.Space.chip) }
             }
             .overlay(alignment: .bottomTrailing) {
-                if item.video, let length = PhotosFormat.length(item.ms) { Text(length).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).shadow(radius: 2).padding(5) }
+                if item.video, let length = PhotosFormat.length(item.ms) { Text(length).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white).shadow(radius: 2).padding(Look.Space.chip) }
             }
             .overlay(alignment: .topTrailing) {
-                if item.video && PhotosFormat.length(item.ms) == nil { Image(systemName: "video.fill").font(.system(size: 11)).foregroundStyle(.white).shadow(radius: 2).padding(5) }
-                else if item.live { Image(systemName: "livephoto").font(.system(size: 11)).foregroundStyle(.white).shadow(radius: 2).padding(5) }
+                if item.video && PhotosFormat.length(item.ms) == nil { Image(systemName: "video.fill").font(.system(size: 11)).foregroundStyle(.white).shadow(radius: 2).padding(Look.Space.chip) }
+                else if item.live { Image(systemName: "livephoto").font(.system(size: 11)).foregroundStyle(.white).shadow(radius: 2).padding(Look.Space.chip) }
             }
             .clipped()
             .matchedGeometryEffect(id: item.id, in: namespace, isSource: true)

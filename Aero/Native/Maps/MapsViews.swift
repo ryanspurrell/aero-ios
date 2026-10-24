@@ -86,7 +86,7 @@ struct MapsScreen: View {
                                 .accessibilityAddTraits(.updatesFrequently)
                         }
                     }
-                    .padding(.top, 64).padding(.leading, Look.Space.inset)
+                    .padding(.top, Look.Space.section).padding(.leading, Look.Space.inset)
                 }
                 .accessibilityElement(children: .contain)
         } else {
@@ -187,12 +187,12 @@ struct MapsScreen: View {
 
     private var tabs: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 18) {
+            HStack(spacing: Look.Space.pad) {
                 ForEach([MapsStore.Tab.timeline, .places], id: \.rawValue) { t in
                     Button { withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { store.tab = t; if detent == .low { detent = .mid } } } label: {
                         Text(t.rawValue).fx(Look.Size.tab, style: .subheadline)
                             .foregroundStyle(store.tab == t ? Look.Palette.fg : Look.Palette.soft)
-                            .padding(.vertical, 10)
+                            .padding(.vertical, Look.Space.snug)
                             .overlay(alignment: .bottom) { if store.tab == t { Rectangle().fill(Look.Palette.fg).frame(height: 3).offset(y: 1) } }
                             .frame(minHeight: Look.Space.sizeTap)
                     }

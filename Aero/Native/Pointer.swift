@@ -142,7 +142,7 @@ struct PointerView: View {
 
     private var next: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: Look.Space.hairline) {
                 Text("NEXT").fx(Look.Size.nextLabel, style: .caption1).tracking(1).foregroundStyle(Look.Palette.label)
                 Text(pointer.title).fx(Look.Size.nextName, style: .title1).foregroundStyle(Look.Palette.ink).padding(.top, Look.Space.hair)
                 if let line = pointer.until ?? pointer.meta {
@@ -166,7 +166,7 @@ struct PointerView: View {
 
     private var block: some View {
         Button(action: open) {
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: Look.Space.hairline) {
                 Text(pointer.title).fx(Look.Size.itemName)
                     .strikethrough(pointer.done)
                     .foregroundStyle(pointer.done ? Look.Palette.doneText : Look.Palette.ink)
@@ -228,7 +228,7 @@ struct PointerView: View {
         .frame(maxWidth: .infinity, minHeight: Look.Space.sizeInput + Look.Space.hair)
         .fingusCard(radius: Look.Bubble.radiusExtra)
         .overlay(alignment: .topTrailing) {
-            if pointer.dot { Circle().fill(Look.Palette.now).frame(width: Look.Space.snug, height: Look.Space.snug).padding(.top, Look.Space.tight).padding(.trailing, Look.Space.tight + 2) }
+            if pointer.dot { Circle().fill(Look.Palette.now).frame(width: Look.Space.snug, height: Look.Space.snug).padding(.top, Look.Space.tight).padding(.trailing, Look.Space.snug) }
         }
     }
 
@@ -250,7 +250,7 @@ struct PointerView: View {
                             .accessibilityAddTraits(.updatesFrequently)
                     }
                 }
-                .padding(.horizontal, Look.Space.inset).padding(.vertical, Look.Space.tight + 2)
+                .padding(.horizontal, Look.Space.inset).padding(.vertical, Look.Space.snug)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusQuestion, style: .continuous).fill(Look.Palette.questionFill))
                 .overlay(RoundedRectangle(cornerRadius: Look.Bubble.radiusQuestion, style: .continuous)

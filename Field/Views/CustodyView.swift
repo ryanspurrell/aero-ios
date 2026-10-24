@@ -23,7 +23,7 @@ struct CustodyView: View {
             FieldCard(title: "Handovers") {
                 if store.data.handovers.isEmpty { FieldNote("No handovers yet. Add one each time the filters change hands.") }
                 ForEach(Array(store.data.handovers.enumerated()), id: \.offset) { _, h in
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: Look.Space.hairline) {
                         Text(FieldWording.name(h.giver, store.data.people) + " to " + FieldWording.name(h.taker, store.data.people))
                             .ft(Look.Size.rowTitle, style: .body).foregroundStyle(Look.Palette.fg)
                         Text(FieldClock.dateTime(h.time)).ft(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
@@ -92,7 +92,7 @@ enum PDFSheet {
         let page = CGRect(x: 0, y: 0, width: 612, height: 792)
         let formatter = UISimpleTextPrintFormatter(text: text)
         formatter.font = UIFont.systemFont(ofSize: 11)
-        formatter.perPageContentInsets = UIEdgeInsets(top: 54, left: 54, bottom: 54, right: 54)
+        formatter.perPageContentInsets = UIEdgeInsets(top: Look.Space.printMargin, left: Look.Space.printMargin, bottom: Look.Space.printMargin, right: Look.Space.printMargin)
         let renderer = UIPrintPageRenderer()
         renderer.addPrintFormatter(formatter, startingAtPageAt: 0)
         renderer.setValue(NSValue(cgRect: page), forKey: "paperRect")

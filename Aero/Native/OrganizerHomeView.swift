@@ -18,23 +18,24 @@ struct OrganizerHomeScreen: View {
     @State private var scrolled = false
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
                 header
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: Look.Space.snug) { content }
+                            .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, Look.Space.gutter)
-                            .padding(.top, 4)
-                            .padding(.bottom, 120)
+                            .padding(.top, Look.Space.hair)
+                            .padding(.bottom, Look.Space.clearance)
                     }
                     .onChange(of: store.answer?.date) { _ in scrollToNext(proxy) }
                     .task { await store.load(); scrollToNext(proxy) }
                 }
-            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             NewBox(assistantSetUp: false, onAdded: { Task { await store.load() } })
                 .padding(.horizontal, Look.Space.gutter)
-                .padding(.bottom, 8)
+                .padding(.bottom, Look.Space.floatBottom)
         }
         .fingusGround()
         .toolbar(.hidden, for: .navigationBar)
@@ -63,7 +64,7 @@ struct OrganizerHomeScreen: View {
             .accessibilityLabel("Menu")
         }
         .padding(.horizontal, Look.Space.gutter)
-        .padding(.top, 6)
+        .padding(.top, Look.Space.chip)
     }
 
     // MARK: content
@@ -73,7 +74,7 @@ struct OrganizerHomeScreen: View {
             DayRows(day: day, metrics: .home, bigNext: true, inlineQuestions: false, store: store, open: { _ in openDay() })
             // the quiet rows (where a thing went or was due) are the day view's: they are neither "something else today" nor a reason to say so
             if day.simple.later.isEmpty && !day.anytime.contains(where: { !Pointer.isQuiet($0.state) }) && day.simple.next != nil {
-                Text("Nothing else today.").fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity).padding(.vertical, 6)
+                Text("Nothing else today.").fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(maxWidth: .infinity).padding(.vertical, Look.Space.chip)
             }
             if let waiting = (day.rows + day.anytime).first(where: { $0.question != nil }) {
                 PointerView(pointer: Pointer(waiting), size: .question, actions: .day(store, open: { _ in openDay() }))
@@ -89,7 +90,7 @@ struct OrganizerHomeScreen: View {
             Text(failure).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft)
             FailureKeys(tryAgain: "Try again", diagnosis: store.failureDiagnosis) { Task { await store.load() } }
         } else {
-            ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+            ProgressView().frame(maxWidth: .infinity).padding(.top, Look.Space.section)
         }
     }
 }

@@ -145,6 +145,7 @@ private struct ChatListPage: View {
                         ChatRow(row: row, me: model.me) { open(row) }
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Look.Space.gutter)
                 .padding(.top, Look.Space.hair)
                 .padding(.bottom, Look.Space.gutter)
@@ -293,7 +294,7 @@ private struct ChatRoomPage: View {
         .padding(.horizontal, Look.Space.gutter)
         .overlay {
             Text(model.phase == .locked ? ChatWords.lockedTitle : model.title).fx(Look.Size.itemName, style: .headline)
-                .foregroundStyle(Look.Palette.fg).lineLimit(1).padding(.horizontal, 110).allowsHitTesting(false)
+                .foregroundStyle(Look.Palette.fg).lineLimit(1).padding(.horizontal, Look.Space.titleReserve).allowsHitTesting(false)
         }
     }
 
@@ -375,7 +376,7 @@ private struct ChatRoomPage: View {
                     .padding(.leading, Look.Space.pad).padding(.vertical, Look.Space.snug)
                     .accessibilityIdentifier("chat-field")
                 sendKey
-                    .padding(.trailing, 7).padding(.bottom, 7)
+                    .padding(.trailing, Look.Space.chip).padding(.bottom, Look.Space.chip)
             }
             .frame(minHeight: Look.Space.sizeInput)
             .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusInput, style: .continuous).fill(Look.Palette.input)
