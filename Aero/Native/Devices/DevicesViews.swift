@@ -53,7 +53,7 @@ private struct DevicesPage: View {
                 VStack(alignment: .leading, spacing: Look.Space.snug) {
                     Text(DevicesWords.title).fx(Look.Size.title, style: .title2).foregroundStyle(Look.Palette.fg)
                     if let mine = model.thisPhoneWaiting {
-                        ChatWaitingNote(name: mine.name, check: { Task { await model.load() } })
+                        ChatWaitingNote(name: mine.name, code: DeviceCode.code(ecdh: mine.ecdh, sign: mine.sign), check: { Task { await model.load() } })
                     }
                     if let notice = model.notice {
                         Text(notice).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
@@ -135,8 +135,11 @@ private struct DeviceSheet: View {
                 if canApprove {
                     VStack(alignment: .leading, spacing: Look.Space.tight) {
                         Text(DevicesWords.approveNote(row.shownName)).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
-                        FingusKey(title: DevicesWords.approve) { Task { await model.approve(row); done() } }
-                            .accessibilityLabel("\(DevicesWords.approve) \(row.shownName)")
+                        Text(ChatWords.waitingCode(DeviceCode.code(ecdh: row.ecdh, sign: row.sign))).font(.system(.title3, design: .monospaced))
+                            .foregroundStyle(Look.Palette.fg).textSelection(.enabled)
+                        Text(DevicesWords.codeQuestion).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg)
+                        FingusKey(title: DevicesWords.codeMatches) { Task { await model.approve(row); done() } }
+                            .accessibilityLabel("\(DevicesWords.codeMatches). Approve \(row.shownName)")
                     }
                 }
                 TextField("", text: $name, prompt: Text(DevicesWords.namePlaceholder).foregroundColor(Look.Palette.inputText))

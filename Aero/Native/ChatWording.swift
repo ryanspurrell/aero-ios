@@ -33,6 +33,7 @@ enum ChatWords {
     static let safetyChanged = "These numbers are different from the last time you looked."
     static let safetyAccept = "They match"
     static let waitingForKeys = "This chat isn't ready on this phone yet. Your PC is sharing it."
+    static func waitingCode(_ code: String) -> String { "Code: \(code)" }
     static let waitingTitle = "Waiting for approval"
     static let waitingCheck = "Check again"
     /// This phone is a new device and a device she already uses has not approved it, so no chat key is sealed to it yet. Says its own fruit name

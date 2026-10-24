@@ -326,3 +326,13 @@ final class DevicesModelTests: XCTestCase {
         XCTAssertEqual(ChatRegistration.read(Data(#"{"ok":true,"trusted":false,"name":"Papaya"}"#.utf8)), ChatRegistration(trusted: false, name: "Papaya"))
     }
 }
+
+final class DeviceCodeTests: XCTestCase {
+    /// Provisional until the PC's function and vector land (see DeviceCode): the same keys give the same code, other keys another, and it
+    /// depends on both keys.
+    func testTheCodeIsFromTheKeysOnly() {
+        XCTAssertEqual(DeviceCode.code(ecdh: "a", sign: "b"), DeviceCode.code(ecdh: "a", sign: "b"))
+        XCTAssertNotEqual(DeviceCode.code(ecdh: "a", sign: "b"), DeviceCode.code(ecdh: "a", sign: "c"))
+        XCTAssertNotEqual(DeviceCode.code(ecdh: "a", sign: "b"), DeviceCode.code(ecdh: "x", sign: "b"))
+    }
+}

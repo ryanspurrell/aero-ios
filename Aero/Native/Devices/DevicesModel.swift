@@ -82,6 +82,8 @@ enum DevicesWords {
     static let needsPC = "Your devices are kept on your PC. Connect it to see them."
     static let empty = "No devices yet."
     static let approve = "Approve"
+    static let codeQuestion = "Does this match the other screen?"
+    static let codeMatches = "It matches"
     static func approveNote(_ name: String) -> String { "Lets \(name) read your chats" }
     static func added(_ day: String) -> String { "Added \(day)" }
     static let namePlaceholder = "A name for this device"

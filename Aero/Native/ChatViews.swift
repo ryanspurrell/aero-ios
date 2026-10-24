@@ -136,7 +136,7 @@ private struct ChatListPage: View {
                         ChatRenewalChoiceNote(rooms: choice.rooms, accept: { Task { await model.acceptRenewalLoss() } }, decline: { model.declineRenewalLoss() })
                     }
                     if let waiting = model.waiting {
-                        ChatWaitingNote(name: waiting.name, check: { Task { await model.load() } })
+                        ChatWaitingNote(name: waiting.name, code: model.session.deviceCode, check: { Task { await model.load() } })
                     }
                     if let stopped = model.stopped {
                         ChatStoppedNote(stopped: stopped, key: { Task { await model.load() } })
@@ -551,12 +551,14 @@ private struct RenameSheet: View {
 /// This phone is waiting for a device she already uses to approve it: its own fruit name, and where to approve it.
 struct ChatWaitingNote: View {
     let name: String?
+    var code: String? = nil
     let check: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: Look.Space.tight) {
             Text(ChatWords.waitingTitle).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg)
             Text(ChatWords.waitingNote(name)).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
+            if let code { Text(ChatWords.waitingCode(code)).font(.system(.title3, design: .monospaced)).foregroundStyle(Look.Palette.fg).textSelection(.enabled) }
             FingusKey(title: ChatWords.waitingCheck, action: check)
         }
         .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.padY)
