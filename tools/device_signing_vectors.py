@@ -53,6 +53,7 @@ def main():
         "approver_sign_private_scalar_hex": alice["sign_private_scalar_hex"],
         "target": {"device": bob["device"], "ecdh": bob["ecdh_public"], "sign": bob["sign_public"]},
         "ts": ts,
+        "code": S.approval_code(bob["ecdh_public"], bob["sign_public"]), "code_vector_A_B": S.approval_code("A", "B"),
         "approval_text": approve, "approval_proof": sign(approve),
         "removal_text": remove, "removal_proof": sign(remove),
     }
@@ -70,7 +71,7 @@ def main():
             {"device": r["device"], "name": r["name"], "kind": r["label"], "added": r["added"], "trusted": bool(r["trusted"]),
              "approved_by": r.get("approved_by"), "ecdh": r["ecdh"], "sign": r["sign"]} for r in rows]}
         assert [r["trusted"] for r in rows] == [True, False], rows
-        assert S.approve_device(alice["person"], alice["device"], bob["device"], out["approval_proof"], ts) is True, "the store refused the approval"
+        assert S.approve_device(alice["person"], alice["device"], bob["device"], out["approval_proof"], ts, S.approval_code(bob["ecdh_public"], bob["sign_public"])) is True, "the store refused the approval"
         assert S.remove_device(alice["person"], bob["device"], alice["device"], out["removal_proof"], ts) is True, "the store refused the removal"
     finally:
         S.time = real_time

@@ -153,7 +153,7 @@ final class ChatSession {
     /// The id of this phone as a chat device, once it has been made.
     var deviceID: String? { device?.id }
     /// The code this phone shows while it waits, so the device that approves it can show the same.
-    var deviceCode: String? { device.map { DeviceCode.code(ecdh: $0.ecdhPublic, sign: $0.signPublic) } }
+    var deviceCode: String? { device.map { DeviceCode.shown(ecdh: $0.ecdhPublic, sign: $0.signPublic) } }
     /// Set when this phone is waiting for approval: the words for it need its name.
     var waitingForApproval: ChatRegistration? { registration.flatMap { $0.trusted ? nil : $0 } }
     /// The first words of a chat opened on this phone, to stand for it in the list while it has no name. In memory only, never for a Locked chat,

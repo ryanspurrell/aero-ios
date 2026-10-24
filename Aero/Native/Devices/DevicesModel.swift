@@ -9,8 +9,9 @@ import Foundation
 /// What the approving or removing device signs. Fixed strings, the same as `fingus_messages_store.approval_text` / `removal_text`
 /// (AeroTests/DeviceSigningTests carries the server's own output for fixed inputs).
 enum DeviceSigning {
+    /// The new device's keys and their code, for this person, at this time (the store's `approval_text`).
     static func approvalText(person: String, device: String, ecdh: String, sign: String, ts: Int) -> String {
-        "approve|\(person)|\(device)|\(ecdh)|\(sign)|\(ts)"
+        "approve|\(person)|\(device)|\(ecdh)|\(sign)|\(ts)|\(DeviceCode.code(ecdh: ecdh, sign: sign))"
     }
 
     static func removalText(person: String, device: String, ts: Int) -> String {
@@ -161,7 +162,8 @@ final class DevicesModel: ObservableObject {
         await act(DevicesWords.approving, done: DevicesWords.approved) { device in
             let ts = self.timestamp()
             let text = DeviceSigning.approvalText(person: self.session.person, device: row.device, ecdh: row.ecdh, sign: row.sign, ts: ts)
-            try await self.session.api.approveDevice(.init(by: device.id, device: row.device, ts: ts, proof: try DeviceSigning.proof(text, by: device)))
+            try await self.session.api.approveDevice(.init(by: device.id, device: row.device, ts: ts, proof: try DeviceSigning.proof(text, by: device),
+                                                           code: DeviceCode.code(ecdh: row.ecdh, sign: row.sign)))
         }
     }
 

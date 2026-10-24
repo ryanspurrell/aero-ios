@@ -218,6 +218,8 @@ final class ChatAPI {
         var device: String
         var ts: Int
         var proof: String
+        /// The code of the waiting device's keys that she saw on both screens (approve only; Aero checks it is those keys').
+        var code: String? = nil
     }
 
     func approveDevice(_ body: Signed) async throws {

@@ -1,10 +1,12 @@
 {
  "about": "Invented keys only. Written by tools/device_signing_vectors.py from the Messages store's own approval_text, removal_text and verify.",
- "approval_proof": "73Q9YgZy_pqodhuB82yUsHmCq9okov2VsH1NU7Ri_11LnxMWLzq5mMShLhLMyH0G033Mu_hDB_YjyvGd4Ai7WQ",
- "approval_text": "approve|person-alice-0001|EBESExQVFhcYGRob|BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY|BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI|1700000000",
+ "approval_proof": "qB3F2vh54x5QIevPj2C3RorfT5rzDCU7-r7yU-0QvNkaAz0xcfIu_7jwI9DOh_lx0NeL_UHqN8ZCycC5krt-fQ",
+ "approval_text": "approve|person-alice-0001|EBESExQVFhcYGRob|BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY|BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI|1700000000|535830",
  "approver_device": "AAECAwQFBgcICQoL",
  "approver_sign_private_scalar_hex": "4fd39fe1ad2d3b87605fe47577c1642f45ae295494445e716a046e4939158152",
  "approver_sign_public": "BMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4",
+ "code": "535830",
+ "code_vector_A_B": "610778",
  "devices_mine": {
   "devices": [
    {
@@ -31,7 +33,7 @@
   "now": 1700000000.0
  },
  "person": "person-alice-0001",
- "removal_proof": "LEw81tnyvHjLXjlqEU_KleSZqtaJCZF_1LD7SewDvfYsJqfrxVWM-Xrqt6aKFJpCowOmi161VfDhqaCCybw1VA",
+ "removal_proof": "ctMmPBuppuIK8VoOsMPjqj0MQrbqEDWC2LVjd68tfslfUAydAljDaRScatan9kSEMWPsgyS1-SNTZ5-RlTjPyw",
  "removal_text": "remove|person-alice-0001|EBESExQVFhcYGRob|1700000000",
  "target": {
   "device": "EBESExQVFhcYGRob",

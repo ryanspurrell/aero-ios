@@ -180,6 +180,7 @@ final class DevicesModelTests: XCTestCase {
         let alice = try DeviceVectors.approver()
         XCTAssertEqual(sent["by"] as? String, alice.id)
         XCTAssertEqual(sent["device"] as? String, row.device)
+        XCTAssertEqual(sent["code"] as? String, DeviceCode.code(ecdh: row.ecdh, sign: row.sign), "the code she saw on both screens goes with it")
         // the time is Aero's clock (the list's `now`, 1700000000) carried forward by the time since it was read
         let ts = try XCTUnwrap(sent["ts"] as? Int)
         XCTAssertTrue((1_700_000_000...1_700_000_030).contains(ts), "\(ts)")
@@ -328,10 +329,20 @@ final class DevicesModelTests: XCTestCase {
 }
 
 final class DeviceCodeTests: XCTestCase {
-    /// Provisional until the PC's function and vector land (see DeviceCode): the same keys give the same code, other keys another, and it
-    /// depends on both keys.
-    func testTheCodeIsFromTheKeysOnly() {
-        XCTAssertEqual(DeviceCode.code(ecdh: "a", sign: "b"), DeviceCode.code(ecdh: "a", sign: "b"))
+    /// The PC's test vector (tests/test_device_approval.py, and the page's node run): ("A", "B") gives 610778.
+    func testTheCodeIsTheOneTheServerAndThePageMake() {
+        XCTAssertEqual(DeviceCode.code(ecdh: "A", sign: "B"), "610778")
+        XCTAssertEqual(DeviceCode.shown(DeviceCode.code(ecdh: "A", sign: "B")), "610 778")
+        XCTAssertEqual(DeviceCode.code(ecdh: "A", sign: "B").count, 6)
+    }
+
+    func testTheCodeOfTheVectorsKeysIsTheStores() throws {
+        let v = try DeviceVectors.load()
+        let target = try XCTUnwrap(v["target"] as? [String: Any])
+        XCTAssertEqual(DeviceCode.code(ecdh: target["ecdh"] as? String ?? "", sign: target["sign"] as? String ?? ""), v["code"] as? String)
+    }
+
+    func testTheCodeDependsOnBothKeys() {
         XCTAssertNotEqual(DeviceCode.code(ecdh: "a", sign: "b"), DeviceCode.code(ecdh: "a", sign: "c"))
         XCTAssertNotEqual(DeviceCode.code(ecdh: "a", sign: "b"), DeviceCode.code(ecdh: "x", sign: "b"))
     }
