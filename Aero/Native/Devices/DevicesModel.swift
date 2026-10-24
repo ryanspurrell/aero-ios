@@ -42,6 +42,7 @@ enum DevicesWords {
     static let approve = "Approve"
     static let codeQuestion = "Does this match the other screen?"
     static let codeMatches = "It matches"
+    static let theyMatch = "They match. Approve"
     static func approveNote(_ name: String) -> String { "Lets \(name) read your chats" }
     static func added(_ day: String) -> String { "Added \(day)" }
     static let namePlaceholder = "A name for this device"
