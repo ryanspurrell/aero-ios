@@ -178,7 +178,7 @@ private struct PartLine: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Look.Space.hair) {
-            Text(title).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg).lineLimit(1)
+            Text(title).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg)
             if !note.isEmpty { Text(note).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft) }
         }
         .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.padY)
