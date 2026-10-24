@@ -1,10 +1,13 @@
 import Foundation
 
-// Devices: this person's devices for chats, as Aero's Devices place under You shows them (messages.js, `chatDevices`): each one's name, kind and
-// date added; a waiting one can be approved from a device she already uses, any can be renamed, and any other can be removed. Built on the
-// Messages routes (devices/mine.json, approve, remove, rename); the signing is done here with this phone's own key, which never leaves it.
-// Specified in Systems/DeviceApproval.lean: only an approval signed by a trusted device makes a device trusted; removal stops any key being
-// sealed to it afterwards; the last trusted device cannot be removed; a name is only a label.
+// Devices: this person's devices as Aero's Devices place under You shows them: one row per device with its parts inside (sign-ins, chat keys
+// trusted or waiting, the file key). A waiting device can be approved from a device she already uses, matching the code on both screens; any can
+// be renamed; two that are one can be merged after she sees why; any other can be removed, with every part, after she confirms. Built on the
+// PC's unified `one-devices` routes (aero_web.py) and, for the chat keys, Messages' signed approve and remove (devices/approve, devices/remove):
+// the signing is done here with this phone's own key, which never leaves it.
+// Specified in Systems/DeviceApproval.lean (only an approval signed by a trusted device makes a device trusted; removal stops any key being
+// sealed to it; the last trusted device cannot be removed; a name is only a label), Systems/DeviceApprovalCode.lean, Systems/OneDevice.lean and
+// Systems/OneDeviceRemoval.lean.
 
 /// What the approving or removing device signs. Fixed strings, the same as `fingus_messages_store.approval_text` / `removal_text`
 /// (AeroTests/DeviceSigningTests carries the server's own output for fixed inputs).
@@ -24,62 +27,16 @@ enum DeviceSigning {
     }
 }
 
-/// The plain rules of the Devices screen: what is listed in which order, what each row says, and what may be done to it.
-enum DeviceListing {
-    /// A waiting device first (it needs something done), then the rest as they were added.
-    static func order(_ rows: [DeviceRow]) -> [DeviceRow] {
-        rows.enumerated().sorted { a, b in
-            if a.element.trusted != b.element.trusted { return !a.element.trusted }
-            let x = a.element.added ?? 0, y = b.element.added ?? 0
-            return x != y ? x < y : a.offset < b.offset
-        }.map(\.element)
-    }
-
-    static func title(_ row: DeviceRow, this: String?) -> String {
-        row.shownName + (row.device == this ? " (this phone)" : "")
-    }
-
-    /// "Waiting for approval", or what kind of device it is and when it was added.
-    static func note(_ row: DeviceRow, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String {
-        if !row.trusted { return DevicesWords.waiting }
-        var parts: [String] = []
-        if let kind = row.kind, !kind.isEmpty { parts.append(kind) }
-        if let added = row.added, added > 0 { parts.append(DevicesWords.added(day(Date(timeIntervalSince1970: added), calendar: calendar, locale: locale))) }
-        return parts.joined(separator: " \u{00B7} ")
-    }
-
-    static func day(_ date: Date, calendar: Calendar, locale: Locale) -> String {
-        let f = DateFormatter()
-        f.locale = locale; f.calendar = calendar; f.timeZone = calendar.timeZone
-        f.setLocalizedDateFormatFromTemplate("MMMd y")
-        return f.string(from: date)
-    }
-
-    static func iAmTrusted(_ rows: [DeviceRow], this: String?) -> Bool {
-        guard let this else { return false }
-        return rows.contains { $0.device == this && $0.trusted }
-    }
-
-    /// Approving needs a trusted device of mine, and a waiting row that is not this phone (a phone cannot approve itself).
-    static func canApprove(_ row: DeviceRow, rows: [DeviceRow], this: String?) -> Bool {
-        !row.trusted && row.device != this && iAmTrusted(rows, this: this)
-    }
-
-    /// Why a row cannot be removed from here, in words; nil when it can. A device that is waiting cannot remove anything. This phone is not
-    /// removed from itself: its chats would lose their keys under it. (The last approved device always stays, which Aero enforces; from here it
-    /// can only be this phone, since removing needs an approved phone and it is the only one left.)
-    static func removalBlocked(_ row: DeviceRow, rows: [DeviceRow], this: String?) -> String? {
-        if !iAmTrusted(rows, this: this) { return DevicesWords.removeNeedsApproval }
-        if row.device == this { return DevicesWords.removeFromAnother }
-        return nil
-    }
-}
-
 enum DevicesWords {
     static let title = "Devices"
     static let youRow = "Devices"
     static let youDetail = "Approve, rename or remove"
     static let waiting = "Waiting for approval"
+    static let signedIn = "Signed in"
+    static let chatKeys = "Chat keys"
+    static let fileKey = "Files"
+    static let removingState = "Removing\u{2026}"
+    static let removeNotNow = "This device can't be removed now."
     static let needsPC = "Your devices are kept on your PC. Connect it to see them."
     static let empty = "No devices yet."
     static let approve = "Approve"
@@ -91,7 +48,37 @@ enum DevicesWords {
     static let keepName = "Keep this name"
     static func remove(_ name: String) -> String { "Remove \(name)" }
     static let removeSure = "Tap again to remove"
-    static let removeNote = "It won't get new keys for your chats. You can approve it again later"
+    static func removeHas(_ has: String) -> String { "Removes \(has). Chats and files locked to it stay closed to it" }
+    static let removeConfirmFirst = "You will be asked to confirm"
+    static let removeCarryOn = "Tap to carry on"
+    static let removeCarryOnAgain = "Tap again to carry on"
+    static func removeAgain(_ why: String) -> String { "\(why). Tap to try again" }
+    static func removingName(_ name: String) -> String { "Removing\u{2026} \(name)" }
+    static func isItYours(_ name: String) -> String { "Is \(name) yours?" }
+    static let whyNotYet = "Why it is not removed yet"
+    static let whatItIs = "What it is"
+    static let confirmNotYours = "Confirm it's not yours"
+    static func confirmNote(_ name: String) -> String { "Then \(name) and everything of it is removed" }
+    static func lastInUse(_ when: String) -> String { "Last in use: \(when)" }
+    static let never = "never"
+    static let keepIt = "Keep it"
+    static let mergeWith = "Merge with another device"
+    static let mergeIfSame = "If it is the same device"
+    static let mayBeSame = "These may be the same device"
+    static func mergeTitle(_ a: String, _ b: String) -> String { "Merge \(a) and \(b)" }
+    static let becomeOne = "These become one device"
+    static func mergeAs(_ name: String) -> String { "Merge as \(name)" }
+    static let mergeKeeps = "Keeps every sign-in and key of both"
+    static let merged = "Merged"
+    static let merging = "Merging the devices"
+    static let evidence = "What was seen"
+    static func seen(_ when: String) -> String { "Last seen \(when)" }
+    static let approvedWord = "Approved"
+    static let approvedByPC = "Approved by the PC"
+    static let codeNotThisDevices = "That code is not this device's."
+    static func codeIs(_ code: String) -> String { "Code \(code)" }
+    static func sameCode(_ name: String) -> String { "Is \(name) showing the same code?" }
+    static let waitingNeedsTrusted = "Approve it from a device you already use"
     static let removeNeedsApproval = "This phone has to be approved before it can remove a device."
     static let removeFromAnother = "To remove this phone, do it from another device."
     static let approved = "Approved"
@@ -107,7 +94,8 @@ enum DevicesWords {
 
 @MainActor
 final class DevicesModel: ObservableObject {
-    @Published private(set) var rows: [DeviceRow] = []
+    @Published private(set) var devices: [OneDevice] = []
+    @Published private(set) var maybeSame: [OneMaybeSame] = []
     @Published private(set) var loaded = false
     @Published private(set) var stopped: ChatStopped?
     /// What was just done, in a few words, until the next change.
@@ -115,9 +103,13 @@ final class DevicesModel: ObservableObject {
     @Published private(set) var busy = false
     /// The device whose removal was asked for once; a second tap on the same one removes it. It is forgotten after `armSeconds`.
     @Published private(set) var armed: String?
+    /// A removal the PC will not do in one step: shown with why and the evidence until she confirms it is not hers, or leaves it.
+    @Published private(set) var asking: OneRemovalAsk?
+    /// What is being done now ("Removing the device"), until it is done.
+    @Published private(set) var working: String?
 
     let session: ChatSession
-    /// Aero's clock minus this phone's, from the last list: a signature is good only for a few minutes of Aero's time (600 seconds in the store).
+    /// The PC's clock minus this phone's, from the last list: a signature is good only for a few minutes of the PC's time (600 seconds in the store).
     private(set) var offset: Double = 0
     private var armTask: Task<Void, Never>?
     /// The page arms a removal for four seconds (phone_design_conventions.md 6.1); the same here.
@@ -127,27 +119,34 @@ final class DevicesModel: ObservableObject {
         self.session = session
     }
 
+    /// This phone's own chat key, which is what marks "this device" in the list.
     var thisDevice: String? { DemoMode.devicesDemo ? DemoMode.thisDeviceID : session.deviceID }
-    var ordered: [DeviceRow] { DeviceListing.order(rows) }
-    var iAmTrusted: Bool { DeviceListing.iAmTrusted(rows, this: thisDevice) }
-    /// Set while this phone itself is waiting to be approved.
-    var thisPhoneWaiting: DeviceRow? { rows.first { $0.device == thisDevice && !$0.trusted } }
+    var iAmTrusted: Bool { OneDeviceListing.iAmTrusted(devices, thisChat: thisDevice) }
+    /// Set while this phone itself is waiting to be approved: its chat key and its code.
+    var thisPhoneWaiting: OneChatKey? { devices.flatMap { $0.parts.chat }.first { $0.device == thisDevice && !$0.trusted } }
 
-    /// Aero's time now, in whole seconds, for a signature.
+    /// The PC's time now, in whole seconds, for a signature.
     func timestamp(now: Date = Date()) -> Int { Int((now.timeIntervalSince1970 + offset).rounded(.down)) }
 
+    func device(_ id: String) -> OneDevice? { devices.first { $0.id == id } }
+
     func load() async {
-        if DemoMode.devicesDemo { rows = DemoMode.deviceRows; loaded = true; return }
+        if DemoMode.devicesDemo {
+            devices = DemoMode.oneDevices; maybeSame = DemoMode.maybeSame; asking = DemoMode.removalAsk; loaded = true
+            return
+        }
         stopped = nil
         let g = session.generation
         do {
-            // this phone is a device first, so that it is in the list and `thisDevice` is known
+            // this phone is a device first, so that its chat key is in the list and `thisDevice` is known
             _ = try await session.ensureDevice()
-            let got = try await session.api.devicesMine()
+            let got = try await session.api.oneDevices(chat: session.deviceID)
             guard g == session.generation else { return }
             offset = got.now - Date().timeIntervalSince1970
-            rows = got.devices
+            devices = got.devices
+            maybeSame = got.maybeSame
             loaded = true
+            if let ask = asking, let now = device(ask.device.id) { asking = OneRemovalAsk(device: now, reasons: ask.reasons, info: ask.info) } else { asking = nil }
             await session.refreshTrust()
         } catch is ChatStale {
             return
@@ -157,21 +156,28 @@ final class DevicesModel: ObservableObject {
         }
     }
 
-    func approve(_ row: DeviceRow) async {
-        guard DeviceListing.canApprove(row, rows: rows, this: thisDevice), !busy else { return }
-        await act(DevicesWords.approving, done: DevicesWords.approved) { device in
-            let ts = self.timestamp()
-            let text = DeviceSigning.approvalText(person: self.session.person, device: row.device, ecdh: row.ecdh, sign: row.sign, ts: ts)
-            try await self.session.api.approveDevice(.init(by: device.id, device: row.device, ts: ts, proof: try DeviceSigning.proof(text, by: device),
-                                                           code: DeviceCode.code(ecdh: row.ecdh, sign: row.sign)))
+    /// Approve every waiting chat key of the device, each signed with this phone's key and carrying the code she saw on both screens (the PC
+    /// checks it is those keys' code). A key whose code the PC lists differently from the one made here is not approved.
+    func approve(_ d: OneDevice) async {
+        let keys = OneDeviceListing.approvable(d, devices: devices, thisChat: thisDevice)
+        guard !keys.isEmpty, !busy else { return }
+        await act(DevicesWords.approving) { device in
+            for k in keys {
+                guard OneDeviceListing.shownCode(k) != nil else { throw ChatAPI.Failure.server(DevicesWords.codeNotThisDevices) }
+                let ts = self.timestamp()
+                let code = DeviceCode.code(ecdh: k.ecdh, sign: k.sign)
+                let text = DeviceSigning.approvalText(person: self.session.person, device: k.device, ecdh: k.ecdh, sign: k.sign, ts: ts)
+                try await self.session.api.approveDevice(.init(by: device.id, device: k.device, ts: ts, proof: try DeviceSigning.proof(text, by: device), code: code))
+            }
+            return DevicesWords.approved
         }
     }
 
     /// The first tap arms the removal, the second (on the same device, within `armSeconds`) does it.
-    func removeTapped(_ row: DeviceRow) async {
-        guard DeviceListing.removalBlocked(row, rows: rows, this: thisDevice) == nil, !busy else { return }
-        if armed != row.device {
-            armed = row.device
+    func removeTapped(_ d: OneDevice) async {
+        guard OneDeviceListing.removalBlocked(d, devices: devices, thisChat: thisDevice) == nil, !busy else { return }
+        if armed != d.id {
+            armed = d.id
             armTask?.cancel()
             armTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: UInt64(DevicesModel.armSeconds * 1_000_000_000))
@@ -181,32 +187,71 @@ final class DevicesModel: ObservableObject {
         }
         armTask?.cancel()
         armed = nil
-        await act(DevicesWords.removing, done: DevicesWords.removed) { device in
-            let ts = self.timestamp()
-            let text = DeviceSigning.removalText(person: self.session.person, device: row.device, ts: ts)
-            try await self.session.api.removeDeviceSigned(.init(by: device.id, device: row.device, ts: ts, proof: try DeviceSigning.proof(text, by: device)))
+        await remove(d, ack: nil)
+    }
+
+    /// "Confirm it's not yours": the evidence she was shown goes back as it came, and the removal goes on.
+    func confirmNotYours() async {
+        guard let ask = asking, !busy else { return }
+        asking = nil
+        await remove(ask.device, ack: ask.info)
+    }
+
+    func leaveAsk() { asking = nil }
+
+    /// The PC writes "removing" on the device and stops sealing to its chat keys; this phone then forgets those chat keys (a device she trusts
+    /// must sign that); the PC then removes the rest, step by step, each recorded. A step that stops is said, and asking again carries on.
+    private func remove(_ d: OneDevice, ack: OneInfo?) async {
+        await act(DevicesWords.removing) { device in
+            var result = try await self.session.api.oneRemove(d.id, ack: ack)
+            if case .confirm(let reasons, let info) = result {
+                self.asking = OneRemovalAsk(device: d, reasons: reasons, info: info)
+                return nil
+            }
+            if case .progress(let p) = result, !p.gone, !d.parts.chat.isEmpty {
+                for k in d.parts.chat where k.device != device.id {
+                    let ts = self.timestamp()
+                    let text = DeviceSigning.removalText(person: self.session.person, device: k.device, ts: ts)
+                    try await self.session.api.removeDeviceSigned(.init(by: device.id, device: k.device, ts: ts, proof: try DeviceSigning.proof(text, by: device)))
+                }
+                result = try await self.session.api.oneRemove(d.id)
+            }
+            guard case .progress(let p) = result else { return nil }
+            return p.gone ? DevicesWords.removed : DevicesWords.removingState + (p.stuck.map { " " + $0 } ?? "")
         }
     }
 
-    func rename(_ row: DeviceRow, to name: String) async {
+    func rename(_ d: OneDevice, to name: String) async {
         let words = name.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
-        guard !words.isEmpty, words != row.name, !busy else { return }
-        await act(DevicesWords.renaming, done: DevicesWords.renamed) { _ in
-            _ = try await self.session.api.renameDevice(row.device, to: words)
+        guard !words.isEmpty, words != d.name, !busy else { return }
+        await act(DevicesWords.renaming) { _ in
+            _ = try await self.session.api.oneRename(d.id, to: words)
+            return DevicesWords.renamed
         }
     }
 
-    private func act(_ doing: String, done: String, _ work: @escaping (ChatDevice) async throws -> Void) async {
+    /// Two rows that are one device, after she has seen both and why: `gone`'s parts join `keep`.
+    func merge(keep: OneDevice, gone: OneDevice) async {
+        guard !busy else { return }
+        await act(DevicesWords.merging) { _ in
+            try await self.session.api.oneMerge(keep: keep.id, gone: gone.id)
+            return DevicesWords.merged
+        }
+    }
+
+    /// Runs one change as the signed-in device, then reads the list again. `work` returns what to say it did, or nil to say nothing.
+    private func act(_ doing: String, _ work: @escaping (ChatDevice) async throws -> String?) async {
         busy = true
+        working = doing
         stopped = nil
         notice = nil
         let g = session.generation
-        defer { busy = false }
+        defer { busy = false; working = nil }
         do {
             let device = try await session.ensureDevice()
-            try await work(device)
+            let said = try await work(device)
             guard g == session.generation else { return }
-            notice = done
+            notice = said
             await load()
         } catch is ChatStale {
             return
@@ -218,6 +263,6 @@ final class DevicesModel: ObservableObject {
 
     func clear() {
         armTask?.cancel()
-        rows = []; loaded = false; stopped = nil; notice = nil; armed = nil
+        devices = []; maybeSame = []; loaded = false; stopped = nil; notice = nil; armed = nil; asking = nil
     }
 }

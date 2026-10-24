@@ -298,27 +298,11 @@ final class ChatTests: XCTestCase {
         XCTAssertEqual(s.diagnosis, "pc_unreachable")
     }
 
-    func testRemovingADeviceNamesTheOneThatTakesItsPlaceAndNeverAnAcknowledgement() throws {
-        func json(_ body: ChatAPI.RemoveBody) throws -> [String: Any] {
-            try JSONSerialization.jsonObject(with: JSONEncoder().encode(body)) as? [String: Any] ?? [:]
-        }
-        let replacing = try json(ChatAPI.RemoveBody(device: "abc12345", replacedBy: "def67890"))
-        XCTAssertEqual(replacing["device"] as? String, "abc12345")
-        XCTAssertEqual(replacing["replaced_by"] as? String, "def67890")
-        XCTAssertNil(replacing["ack"])
-        XCTAssertNil(replacing["lose_history"])
-        XCTAssertNil(try json(ChatAPI.RemoveBody(device: "abc12345"))["replaced_by"])
-    }
-
-    func testADeviceThePersonRemovedIsToldToMakeNewKeys() throws {
+    func testADeviceThePersonRemovedIsToldSoAndNothingNewIsMade() throws {
         XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"device_removed":true,"error":"This device was removed from your list, so it needs new keys."}"#.utf8)), .deviceRemoved)
         let s = ChatStopWords.make(doing: ChatStopWords.opening, error: ChatAPI.Failure.deviceRemoved)
-        XCTAssertEqual(s.text, "This phone was removed from your devices, so it needs new keys. Try again.")
+        XCTAssertEqual(s.text, ChatWords.deviceRemoved)
         XCTAssertEqual(s.action, .retry)
-        // a refusal because the replacement cannot open everything yet is Aero's own words, and is not "gone"
-        let notYet = ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true,"error":"The new device can't open everything yet."}"#.utf8))
-        XCTAssertEqual(notYet, .server("The new device can't open everything yet."))
-        XCTAssertFalse(ChatAPI.alreadyGone(try XCTUnwrap(notYet)))
     }
 
     func testADeviceAeroDoesNotListIsAlreadyGone() {
@@ -328,130 +312,11 @@ final class ChatTests: XCTestCase {
         XCTAssertFalse(ChatAPI.alreadyGone(.notSignedIn))
         // Aero's own 404 words decode to exactly that case
         XCTAssertEqual(ChatAPI.failure(status: 404, data: Data(#"{"ok":false,"error":"That device isn't in your list."}"#.utf8)), .server(ChatAPI.notInList))
-        // and the refusal that closes a chat for good is a refusal, not "gone"
-        let holds = ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"error":"Only this device can open 1 chat. Removing it closes it for good. Tap again to remove it anyway.","holds":{"rooms":1,"epochs":1}}"#.utf8))
-        XCTAssertNotNil(holds)
-        XCTAssertFalse(ChatAPI.alreadyGone(holds!))
     }
 
     func testThisAppIsNamedAsAnAppInTheDevicesList() {
         XCTAssertEqual(ChatWords.deviceLabel, "iPhone (Aero app)")
         XCTAssertTrue(ChatWords.deviceLabel.count <= 40)
-    }
-
-    // MARK: the new device must really open what the old one can
-
-    /// Aero's `devices/keys.json` for one device: for each room given, the key sealed to it by `sealer` for each epoch, every room listed
-    /// (the list names rooms and epochs only, and is not held back while Locked is shut).
-    private func held(_ rooms: [(String, SymmetricKey)], epochs: [Int] = [0], to d: ChatDevice, by sealer: ChatDevice) throws -> ChatHeldKeys {
-        var keys: [ChatHeldKey] = []
-        for (room, key) in rooms {
-            for e in epochs {
-                let out = try ChatCrypto.seal(room: room, epoch: e, key: key, to: [ChatDeviceKeys(device: d.id, ecdh: d.ecdhPublic, personID: d.person)], person: d.person, from: sealer)[0]
-                keys.append(ChatHeldKey(room: room, epoch: e, byPerson: sealer.person, byDevice: sealer.id, iv: out.iv, ct: out.ct))
-            }
-        }
-        let info = ChatDeviceInfo(device: sealer.id, ecdh: sealer.ecdhPublic, sign: sealer.signPublic, label: nil, personID: nil, isPrivate: nil)
-        return ChatHeldKeys(keys: keys, devices: [sealer.person: [info]])
-    }
-
-    func testAReplacementThatOpensToTheSameKeysIsProvedForEveryRoomAndEpoch() throws {
-        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1")
-        let shown = ChatCrypto.freshKey(), hidden = ChatCrypto.freshKey()
-        let rooms = [("rabc", shown), ("rhid", hidden)]        // "rhid" is in no chat list: it is listed here all the same
-        let result = ChatRenewalCheck.prove(theirs: try held(rooms, epochs: [0, 1], to: old, by: pc), mine: try held(rooms, epochs: [0, 1], to: fresh, by: pc), old: old, fresh: fresh)
-        XCTAssertEqual(result.unopened, 0)
-        XCTAssertEqual(result.proofs.map { "\($0.room)|\($0.epoch)" }.sorted(), ["rabc|0", "rabc|1", "rhid|0", "rhid|1"])
-    }
-
-    func testAProofIsTheNewDevicesSignatureOverTheSealAsStoredAndAValueOnlyTheKeyMakes() throws {
-        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1")
-        let key = ChatCrypto.freshKey()
-        let mine = try held([("rabc", key)], to: fresh, by: pc)
-        let proof = ChatRenewalCheck.prove(theirs: try held([("rabc", key)], to: old, by: pc), mine: mine, old: old, fresh: fresh).proofs[0]
-        let seal = mine.keys[0]
-        let h = ChatRenewalCheck.sealHash(iv: seal.iv, ct: seal.ct)
-        XCTAssertEqual(h.count, 64)
-        let signed = ChatRenewalCheck.openedPart(room: "rabc", epoch: 0, person: fresh.person, device: fresh.id, sealHash: h, kc: proof.kc)
-        XCTAssertTrue(ChatCrypto.verify(signPublic: fresh.signPublic, sig: proof.sig, signed: signed))
-        XCTAssertFalse(ChatCrypto.verify(signPublic: old.signPublic, sig: proof.sig, signed: signed))
-        // the value is the room key's alone (the same on every device that holds it), so Aero can compare two devices' claims
-        let text = Data("chat-opened|rabc|0".utf8)
-        XCTAssertEqual(proof.kc, ChatBase64.encode(Data(HMAC<SHA256>.authenticationCode(for: text, using: key))))
-    }
-
-    func testAReplacementSealThatIsOnlyARowOrForTheWrongDeviceOrKeyIsNotProved() throws {
-        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1"), other = Self.soft("p1")
-        let key = ChatCrypto.freshKey()
-        let theirs = try held([("rabc", key)], epochs: [0, 1], to: old, by: pc)
-        // sealed to another device: a row exists, the new phone cannot open it
-        let wrongDevice = try held([("rabc", key)], epochs: [0, 1], to: other, by: pc)
-        XCTAssertEqual(ChatRenewalCheck.prove(theirs: theirs, mine: wrongDevice, old: old, fresh: fresh).unopened, 2)
-        // junk of the right shape
-        var junk = try held([("rabc", key)], epochs: [0, 1], to: fresh, by: pc)
-        junk.keys[1].ct = ChatBase64.encode(Data(repeating: 7, count: 48))
-        let junked = ChatRenewalCheck.prove(theirs: theirs, mine: junk, old: old, fresh: fresh)
-        XCTAssertEqual(junked.unopened, 1)
-        XCTAssertEqual(junked.proofs.count, 1)
-        // opens, but to another room key
-        let differs = try held([("rabc", ChatCrypto.freshKey())], epochs: [0, 1], to: fresh, by: pc)
-        XCTAssertEqual(ChatRenewalCheck.prove(theirs: theirs, mine: differs, old: old, fresh: fresh).unopened, 2)
-        // an epoch with no seal at all
-        var short = try held([("rabc", key)], epochs: [0, 1], to: fresh, by: pc)
-        short.keys.removeLast()
-        XCTAssertEqual(ChatRenewalCheck.prove(theirs: theirs, mine: short, old: old, fresh: fresh).unopened, 1)
-    }
-
-    func testABadSealInARoomNoChatListShowsStopsTheMove() throws {
-        // round 8: the check used to go room by room through the chat list, so a hidden room's bad replacement seal was never opened
-        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1")
-        let a = ChatCrypto.freshKey(), b = ChatCrypto.freshKey()
-        let theirs = try held([("rabc", a), ("rhid", b)], to: old, by: pc)
-        var mine = try held([("rabc", a), ("rhid", b)], to: fresh, by: pc)
-        mine.keys[1].ct = ChatBase64.encode(Data(repeating: 9, count: 48))
-        let result = ChatRenewalCheck.prove(theirs: theirs, mine: mine, old: old, fresh: fresh)
-        XCTAssertEqual(result.unopened, 1)
-        XCTAssertEqual(result.proofs.map(\.room), ["rabc"])
-    }
-
-    func testASealTheOldDeviceCannotOpenIsNotProvedSoTheMoveWaits() throws {
-        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1")
-        let key = ChatCrypto.freshKey()
-        var theirs = try held([("rabc", key)], to: old, by: pc)
-        theirs.keys[0].ct = ChatBase64.encode(Data(repeating: 3, count: 48))
-        let result = ChatRenewalCheck.prove(theirs: theirs, mine: try held([("rabc", key)], to: fresh, by: pc), old: old, fresh: fresh)
-        XCTAssertEqual(result.unopened, 0)
-        XCTAssertEqual(result.oldCannotOpen, 1)      // never proved, and waiting does not help: the person is asked (round 9)
-        XCTAssertTrue(result.proofs.isEmpty)
-        XCTAssertTrue(result.oldProofs.isEmpty)
-    }
-
-    func testBothDevicesSignTheSameKeyValueForEveryKeyTheyBothOpen() throws {
-        let pc = Self.soft("p1"), old = Self.soft("p1"), fresh = Self.soft("p1")
-        let key = ChatCrypto.freshKey()
-        let theirs = try held([("rabc", key)], to: old, by: pc), mine = try held([("rabc", key)], to: fresh, by: pc)
-        let result = ChatRenewalCheck.prove(theirs: theirs, mine: mine, old: old, fresh: fresh)
-        XCTAssertEqual(result.proofs.count, 1)
-        XCTAssertEqual(result.oldProofs.count, 1)
-        XCTAssertEqual(result.proofs[0].kc, result.oldProofs[0].kc)
-        let oh = ChatRenewalCheck.sealHash(iv: theirs.keys[0].iv, ct: theirs.keys[0].ct)
-        let signed = ChatRenewalCheck.openedPart(room: "rabc", epoch: 0, person: old.person, device: old.id, sealHash: oh, kc: result.oldProofs[0].kc)
-        XCTAssertTrue(ChatCrypto.verify(signPublic: old.signPublic, sig: result.oldProofs[0].sig, signed: signed))
-    }
-
-    func testAnAnswerThatNothingIsCoveredCarriesWhatWouldStayClosedAndTheAck() {
-        let said = ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true,"holds":{"rooms":2,"epochs":3},"ack":"abc","error":"The new device can't open everything yet."}"#.utf8))
-        XCTAssertEqual(said, .notCovered(rooms: 2, ack: "abc"))
-        // without holds and an ack (the server sends none when nothing is left to accept) there is nothing to choose: its own words
-        XCTAssertEqual(ChatAPI.failure(status: 409, data: Data(#"{"ok":false,"not_covered":true}"#.utf8)), .server("That didn't work. Try again."))
-    }
-
-    func testTheWordsForLettingChatsStayClosedAreGentleAndSayWhatEachKeyDoes() {
-        XCTAssertTrue(ChatWords.renewalChoice(1).contains("1 older chat"))
-        XCTAssertTrue(ChatWords.renewalChoice(3).contains("3 older chats"))
-        for words in [ChatWords.renewalChoice(1), ChatWords.renewalChoice(2), ChatWords.renewalMoveOn, ChatWords.renewalKeep, ChatWords.renewalDeclined] {
-            XCTAssertFalse(words.unicodeScalars.contains { $0.properties.isEmojiPresentation })
-        }
     }
 
     func testAMessageARemovedDeviceSignedStillChecks() throws {
@@ -467,7 +332,7 @@ final class ChatTests: XCTestCase {
     func testNoWordOfChatHasAnEmoji() {
         let words: [String] = [ChatWords.tab, ChatWords.listTitle, ChatWords.newChat, ChatWords.empty, ChatWords.composerPrompt, ChatWords.send, ChatWords.stop,
                                ChatWords.back, ChatWords.startTitle, ChatWords.startNote, ChatWords.lockedNeedsUnlock, ChatWords.unlockKey, ChatWords.lockedShut,
-                               ChatWords.waitingForKeys, ChatWords.renewalStopped, ChatWords.lockedTitle, ChatWords.deviceLabel, ChatWords.devicesFull(8), ChatWords.devicesFull(0), ChatOpener.beforeYouJoined, ChatOpener.notVerified, ChatOpener.notOpened,
+                               ChatWords.waitingForKeys, ChatWords.lockedTitle, ChatWords.deviceLabel, ChatWords.devicesFull(8), ChatWords.devicesFull(0), ChatOpener.beforeYouJoined, ChatOpener.notVerified, ChatOpener.notOpened,
                                ChatPrivacy.open.line, ChatPrivacy.locked.line]
         for w in words {
             for scalar in w.unicodeScalars { XCTAssertFalse(scalar.properties.isEmojiPresentation, w) }

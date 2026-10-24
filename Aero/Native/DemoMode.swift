@@ -14,21 +14,48 @@ enum DemoMode {
     /// parts home also want -FingusPartsHome YES and an AeroServerAddress, so the part tiles that need a PC are drawn)
     static var page: String? { isOn ? UserDefaults.standard.string(forKey: "aero-demo-page") : nil }
     static var chatDemo: Bool { page == "chatlist" || page == "chat" }
-    /// -aero-demo-page devices (this phone waiting) or devices-approve (this phone approved, another waiting): the Devices screen over You.
-    static var devicesDemo: Bool { page == "devices" || page == "devices-approve" }
+    /// -aero-demo-page devices (this phone waiting), devices-approve (this phone approved, another waiting, two that may be one), devices-sheet
+    /// (that waiting one open, with its parts and code) or devices-confirm (a device in use lately: asked to confirm it is not hers): the Devices
+    /// screen over You.
+    static var devicesDemo: Bool { page.map { ["devices", "devices-approve", "devices-sheet", "devices-confirm"].contains($0) } ?? false }
+    static var devicesSheetOpen: Bool { page == "devices-sheet" || page == "devices-confirm" }
+    static var devicesSheetDevice: String? { page == "devices-sheet" ? "demo-new" : page == "devices-confirm" ? "demo-web" : nil }
     static let thisDeviceID = "demo-phone"
-    /// Invented devices for the picture: names are the fruit names Aero gives, ids and keys are invented.
-    static var deviceRows: [DeviceRow] {
+    /// Invented devices for the picture: names are the fruit names Aero gives, ids and keys are invented. One row per device, its parts inside.
+    static var oneDevices: [OneDevice] {
         let now = Date().timeIntervalSince1970
-        func row(_ id: String, _ name: String, _ kind: String, daysAgo: Double, trusted: Bool = true) -> DeviceRow {
-            DeviceRow(device: id, name: name, kind: kind, added: now - daysAgo * 86_400, trusted: trusted, approvedBy: trusted ? "machine" : nil, ecdh: "invented", sign: "invented")
+        func chat(_ id: String, _ label: String, daysAgo: Double, trusted: Bool = true) -> OneChatKey {
+            let ecdh = "invented-ecdh-" + id, sign = "invented-sign-" + id
+            let code = DeviceCode.code(ecdh: ecdh, sign: sign)
+            return OneChatKey(device: id, label: label, added: now - daysAgo * 86_400, trusted: trusted, approvedBy: trusted ? "machine" : nil,
+                              ecdh: ecdh, sign: sign, code: trusted ? nil : code, codeShown: trusted ? nil : DeviceCode.shown(code))
         }
         let phoneWaiting = page == "devices"
+        let inUse = page == "devices-confirm"
         return [
-            row("demo-pc", "Kiwi", "This PC", daysAgo: 40),
-            row("demo-web", "Sapodilla", "iPhone (browser)", daysAgo: 18),
-            row(thisDeviceID, "Coconut", "iPhone (Aero app)", daysAgo: 0.1, trusted: !phoneWaiting),
-        ] + (phoneWaiting ? [] : [row("demo-new", "Tamarind", "Safari on iPhone", daysAgo: 0.02, trusted: false)])
+            OneDevice(id: "t-phone", name: "Coconut", kind: "iPhone", this: true, waiting: phoneWaiting, seen: now, canRemove: false, whyNot: "You are using it now",
+                      parts: OneParts(session: [OneSignIn(id: "s-phone", label: "Aero app", agent: "Aero app", seen: now)],
+                                      chat: [chat(thisDeviceID, "iPhone (Aero app)", daysAgo: 0.1, trusted: !phoneWaiting)])),
+            OneDevice(id: "t-pc", name: "Kiwi", kind: "PC", seen: now - 60, canRemove: false, whyNot: "This is the PC itself",
+                      parts: OneParts(chat: [chat("demo-pc", "This PC", daysAgo: 40)], key: [OneFileKey(device: "pc-key", label: "This PC", kind: "pc", added: now - 40 * 86_400, used: now - 60)])),
+            OneDevice(id: "demo-web", name: "Sapodilla", kind: "iPhone", seen: now - (inUse ? 240 : 86_400 * 3), canRemove: true,
+                      info: OneInfo(seen: Int(now - (inUse ? 240 : 86_400 * 3)), confirmed: !inUse),
+                      confirmFirst: inUse ? ["It was in use 4 minutes ago", "You haven't used it to confirm it is yours"] : [],
+                      parts: OneParts(session: [OneSignIn(id: "s-web", label: "Safari on iPhone", agent: "Safari on iPhone", seen: now - (inUse ? 240 : 86_400 * 3))],
+                                      chat: [chat("demo-web-chat", "iPhone (browser)", daysAgo: 18)])),
+        ] + (phoneWaiting ? [] : [
+            OneDevice(id: "demo-new", name: "Tamarind", kind: "iPhone", waiting: true, seen: now - 120, canRemove: true,
+                      parts: OneParts(session: [OneSignIn(id: "s-new", label: "Safari on iPhone", agent: "Safari on iPhone", seen: now - 120)],
+                                      chat: [chat("demo-new-chat", "Safari on iPhone", daysAgo: 0.02, trusted: false)])),
+        ])
+    }
+    static var maybeSame: [OneMaybeSame] {
+        page == "devices-approve" ? [OneMaybeSame(a: "demo-web", b: "demo-new", why: "Sapodilla and Tamarind used the same browser to sign in and to set up chats")] : []
+    }
+    /// The removal the PC would not do in one step, for the picture of the confirmation.
+    static var removalAsk: OneRemovalAsk? {
+        guard page == "devices-confirm", let d = oneDevices.first(where: { $0.id == "demo-web" }) else { return nil }
+        return OneRemovalAsk(device: d, reasons: d.confirmFirst, info: d.info)
     }
     /// Invented chats for the picture: nothing is asked of a server and nothing is kept. The last has no name yet, so its row says when it was
     /// last used; none is called by the AI's name.

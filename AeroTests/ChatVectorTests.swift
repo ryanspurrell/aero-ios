@@ -265,7 +265,7 @@ final class ChatVectorTests: XCTestCase {
     }
 
     func testADeviceFromTheEarlierBuildIsKeptAsItIsEvenWhereThereIsASecureEnclave() throws {
-        // replacing it here would close for good any chat only it could open: it is moved only by ChatSession, when Aero says nothing is lost
+        // replacing it here would close for good any chat only it could open: it is never replaced by a new one
         let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
         let record = legacyRecord(e, s)
         let store = MemoryChatKeyStore()
@@ -274,70 +274,7 @@ final class ChatVectorTests: XCTestCase {
         XCTAssertEqual(got.id, "AAECAwQFBgcICQoL")
         XCTAssertEqual(got.ecdhPublic, ChatBase64.encode(e.publicKey.x963Representation))
         XCTAssertTrue(got.isSoftware)
-        XCTAssertEqual(got.canMoveToEnclave, SecureEnclave.isAvailable)
         XCTAssertEqual(try store.load(person: "p1"), record)
-    }
-
-    func testTheNextDeviceIsKeptApartAndNeverReadAsThePersonsOwn() throws {
-        let store = MemoryChatKeyStore()
-        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
-        let next = Self.softFresh("p1")
-        try ChatNextDevice.keep(next, in: store)
-        // a restart is another look at the same store: the same device, with the keys it needs to open what is sealed to it
-        let again = try XCTUnwrap(ChatNextDevice.load(person: "p1", in: store))
-        XCTAssertEqual(again.id, next.id)
-        XCTAssertEqual(again.ecdhPublic, next.ecdhPublic)
-        XCTAssertNil(ChatNextDevice.load(person: "p2", in: store))
-        XCTAssertNil(try store.load(person: "p1"))
-        ChatNextDevice.clear(person: "p1", in: store)
-        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
-    }
-
-    func testReplacingKeepsTheNewDeviceAndClearsTheNextOne() throws {
-        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
-        let store = MemoryChatKeyStore()
-        try store.save(legacyRecord(e, s), person: "p1")
-        let old = try ChatDeviceKeeper.device(for: "p1", in: store)
-        let fresh = Self.softFresh("p1")
-        try ChatNextDevice.keep(fresh, in: store)
-        try ChatDeviceKeeper.replace(old, with: fresh, in: store)
-        // the new device is the one kept from now on; the old keys are gone only here
-        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, fresh.id)
-        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
-    }
-
-    func testARemovedDeviceStartsAgainWithTheNextDeviceIfThereIsOneElseANewOne() throws {
-        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
-        let store = MemoryChatKeyStore()
-        try store.save(legacyRecord(e, s), person: "p1")
-        let fresh = Self.softFresh("p1")
-        try ChatNextDevice.keep(fresh, in: store)
-        let first = try ChatDeviceKeeper.startAgain(for: "p1", in: store)
-        XCTAssertEqual(first.id, fresh.id)
-        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, fresh.id)
-        XCTAssertNil(ChatNextDevice.load(person: "p1", in: store))
-        // with none noted it is a new device, kept in the place of the removed one
-        let second = try ChatDeviceKeeper.startAgain(for: "p1", in: store)
-        XCTAssertNotEqual(second.id, fresh.id)
-        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, second.id)
-    }
-
-    /// A store whose saves fail for the device (the Keychain refusing), as the second save in a replacement.
-    private final class SaveFails: ChatKeyStore {
-        var data: [String: Data] = [:]
-        func load(person: String) throws -> Data? { data[person] }
-        func save(_ data: Data, person: String) throws { throw ChatKeyError.notSaved(-25308) }
-        func forget(person: String) throws { data[person] = nil }
-    }
-
-    func testAFailedSaveOfTheNewKeysLeavesTheOldDeviceKept() throws {
-        let e = P256.KeyAgreement.PrivateKey(), s = P256.Signing.PrivateKey()
-        let store = SaveFails()
-        store.data["p1"] = legacyRecord(e, s)
-        let old = try ChatDeviceKeeper.device(for: "p1", in: store)
-        XCTAssertThrowsError(try ChatDeviceKeeper.replace(old, with: Self.softFresh("p1"), in: store))
-        // the old device is still the one kept, with its keys: they are discarded only by a save that worked
-        XCTAssertEqual(try ChatDeviceKeeper.device(for: "p1", in: store).id, "AAECAwQFBgcICQoL")
     }
 
     @MainActor

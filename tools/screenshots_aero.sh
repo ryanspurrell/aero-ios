@@ -28,5 +28,7 @@ shoot location -FingusPartsHome YES -FingusAddedParts organizer,messages,photos,
 shoot you -aero-demo-page you
 shoot devices -aero-demo-page devices
 shoot devices-approve -aero-demo-page devices-approve
+shoot devices-sheet -aero-demo-page devices-sheet
+shoot devices-confirm -aero-demo-page devices-confirm
 xcrun simctl shutdown "$udid" || true
 ls -l "$out"

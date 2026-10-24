@@ -16,16 +16,6 @@ enum ChatWords {
     static let lockedNeedsUnlock = "Locked chats open once Aero has unlocked with Face ID."
     static let unlockKey = "Unlock in Aero"
     static let lockedShut = "This chat is Locked."
-    static let keysRenewed = "This phone's chat keys were renewed. Older chats may take a moment to open again."
-    static let renewalStopped = "Your chats are still open on this phone as before. The newer, safer keys can't open all of them yet, so nothing was changed. This is tried again next time."
-    /// The old keys on this phone cannot open some chats, so they cannot be brought to the newer keys. Said before anything is changed.
-    static func renewalChoice(_ rooms: Int) -> String {
-        let which = rooms == 1 ? "1 older chat" : rooms > 1 ? "\(rooms) older chats" : "Some older chats"
-        return "Your newer, safer keys are ready. \(which) can't be opened with the keys this phone has now, so \(rooms == 1 ? "it" : "they") can't be brought across and would stay closed. Everything else opens as before."
-    }
-    static let renewalMoveOn = "Move on, leave them closed"
-    static let renewalKeep = "Keep things as they are"
-    static let renewalDeclined = "Nothing was changed, and your chats are open on this phone as before. You can choose again next time."
     static let safetyUnchecked = "You haven't compared these numbers yet."
     static let safetyKey = "Safety code"
     static let safetyTitle = "Safety code"
@@ -67,7 +57,7 @@ enum ChatWords {
     }
 
     /// This phone's device was removed from the person's list; it makes new keys the next time.
-    static let deviceRemoved = "This phone was removed from your devices, so it needs new keys. Try again."
+    static let deviceRemoved = "This phone was removed from your devices. Its keys are kept as they were, and nothing new was made."
 
     static func rowNote(_ unread: String?, locked: Bool) -> String? {
         [locked ? "Locked" : nil, unread].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
@@ -112,6 +102,7 @@ enum ChatStep {
 enum ChatStopWords {
     /// What was being done, as a phrase that goes before "stopped at".
     static let loadingList = "Showing your chats"
+    static let settingUp = "Setting up this phone for chats"
     static let opening = "Opening this chat"
     static let sending = "Sending your message"
     static let starting = "Starting the chat"
@@ -136,14 +127,12 @@ enum ChatStopWords {
                 return ChatStopped(doing: doing, step: ChatStep.devices, next: "Remove one in Devices, then try again.", key: "Try again", action: .retry,
                                    words: ChatWords.devicesFull(count))
             case .deviceRemoved:
-                return ChatStopped(doing: doing, step: ChatStep.devices, next: "This phone was removed from your devices, so it needs new keys. Try again.", key: "Try again", action: .retry,
+                return ChatStopped(doing: doing, step: ChatStep.devices, next: "Its keys are kept. Ask a device you use to add it again, or try again.", key: "Try again", action: .retry,
                                    words: ChatWords.deviceRemoved)
             case .server(let words):
                 // the generic words are the app's own, not Aero's
                 let aero = words == "That didn't work. Try again." ? nil : words
                 return ChatStopped(doing: doing, step: ChatStep.answer, next: "Try again.", key: "Try again", action: .retry, said: aero)
-            case .notCovered:
-                return ChatStopped(doing: doing, step: ChatStep.answer, next: "Try again.", key: "Try again", action: .retry)
             case .notAero:
                 return ChatStopped(doing: doing, step: ChatStep.reaching, next: "Check your connection, then try again.", key: "Try again", action: .retry,
                                    diagnosis: "pc_unreachable")
