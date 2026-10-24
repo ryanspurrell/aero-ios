@@ -67,7 +67,7 @@ final class FieldSampleTests: XCTestCase {
             (sample(before: Rat(1, 4)), .beforeOutOfBand),
             (sample(before: 17), .beforeOutOfBand),
             (sample(after: 20), .afterOutOfBand),
-            (sample(after: Rat(1, 4), stop: 100), .afterOutOfBand),
+            (sample(stop: 100, after: Rat(1, 4)), .afterOutOfBand),
             (sample(after: Rat(23, 10)), .drift),
             (sample(stop: 100), .volumeShort),
         ]
@@ -98,7 +98,7 @@ final class FieldSampleTests: XCTestCase {
     }
 
     func testBoundaryOfTheDriftAndVolumeChecks() {
-        XCTAssertEqual(state(m, sample(after: Rat(21, 10), stop: 200)), .counts, "a difference of exactly 0.1 is allowed (tol < diff fails, not <=)")
+        XCTAssertEqual(state(m, sample(stop: 200, after: Rat(21, 10))), .counts, "a difference of exactly 0.1 is allowed (tol < diff fails, not <=)")
         XCTAssertEqual(state(m, sample(stop: 200, after: 2)), .counts, "exactly 400 L counts")
         XCTAssertEqual(state(m, sample(stop: 199, after: 2)), .fails(.volumeShort))
     }
