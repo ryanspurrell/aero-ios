@@ -395,6 +395,7 @@ final class ChatListModel: ObservableObject {
     var renewedNotice: String? { session.renewedKeys ? ChatWords.keysRenewed : session.renewalProblem }
 
     func load() async {
+        if DemoMode.chatDemo { rooms = DemoMode.chatRows; loaded = true; return }
         stopped = nil
         loadToken += 1
         let token = loadToken
@@ -515,6 +516,7 @@ final class ChatRoomModel: ObservableObject {
     // MARK: opening
 
     func load() async {
+        if DemoMode.chatDemo { lines = DemoMode.chatLines; phase = .ready; return }
         stopped = nil
         guard let id = roomID else { phase = .ready; return }
         let t = token()

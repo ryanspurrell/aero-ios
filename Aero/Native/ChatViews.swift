@@ -60,6 +60,7 @@ struct ChatScreen: View {
                 }
             }
             await list?.load()
+            if DemoMode.page == "chat", room == nil, let list, let first = DemoMode.chatRows.first { room = ChatRoomModel(session: list.session, room: first, privacy: .open) }
         }
         // the web view was open: it may have signed out or into another account, so nothing held for the last one is kept
         .onChange(of: returned) { _ in

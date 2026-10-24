@@ -55,7 +55,7 @@ struct PartsHomeScreen: View {
     var openWeb: () -> Void
     var webClosed: Int
 
-    @State private var walk: [String] = []
+    @State private var walk: [String] = DemoMode.page == "location" ? ["location"] : []
 
     private var tiles: [PartInfo] { PartsSelection.tiles(added: added, parts: registry.parts, hasPC: hasPC) }
     private var graph: Holarchy { Holarchy.home(tiles: tiles.map(\.id)) }

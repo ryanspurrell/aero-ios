@@ -24,7 +24,7 @@ struct OrganizerDayScreen: View {
     @Namespace private var zoom
     @GestureState private var pinch: CGFloat = 1
     /// The Shopping screen (Aero/Native/Shopping): the open things to buy and the lists as views. Drawn natively with or without a PC.
-    @State private var showShopping = false
+    @State private var showShopping = DemoMode.page == "shopping"
 
     var body: some View {
         ZStack(alignment: .bottom) {

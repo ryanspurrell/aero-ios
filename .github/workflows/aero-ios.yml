@@ -8,6 +8,10 @@ on:
         description: "Also sign and upload a build to TestFlight (needs the three App Store Connect secrets)"
         type: boolean
         default: false
+      label:
+        description: "Name added to the screenshots artifact (aero-screenshots-<label>), e.g. before or after"
+        type: string
+        default: "run"
 
 # macOS 15 image with Xcode 26.2 chosen by path, so a change to the image's
 # default Xcode does not change this build. The label macos-15 itself moves
@@ -68,6 +72,33 @@ jobs:
         if: failure()
         run: |
           grep -E "error: -\[|' failed \(" test-output.txt || echo "no failed test lines found"
+      - name: Pick an iPad simulator
+        run: |
+          set -eu
+          xcrun simctl list devices available -j > devices.json
+          pad="$(python3 -c '
+          import json
+          for runtime, devices in json.load(open("devices.json"))["devices"].items():
+              if "iOS" in runtime:
+                  for d in devices:
+                      if d["name"].startswith("iPad") and "mini" not in d["name"]:
+                          print(d["udid"]); raise SystemExit
+          ')"
+          test -n "$pad"
+          echo "PAD_UDID=$pad" >> "$GITHUB_ENV"
+      - name: Screenshots on iPhone and iPad
+        run: |
+          set -eu
+          app="build-tests/Build/Products/Debug-iphonesimulator/$AERO_NAME.app"
+          test -d "$app"
+          sh tools/screenshots_aero.sh "$app" com.example.aero "$SIM_UDID" iphone screenshots
+          sh tools/screenshots_aero.sh "$app" com.example.aero "$PAD_UDID" ipad screenshots
+      - name: Save the screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: aero-screenshots-${{ inputs.label || 'run' }}
+          path: screenshots/*.png
+          if-no-files-found: error
       - name: Print how long this job took
         if: always()
         run: echo "check job took $(( $(date +%s) - STARTED_AT )) seconds"

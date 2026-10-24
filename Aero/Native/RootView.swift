@@ -17,7 +17,7 @@ import SwiftUI
 /// web view, from which the item is one tap.
 struct RootView: View {
     @State private var showWeb = false
-    @State private var showChat = false
+    @State private var showChat = DemoMode.chatDemo
     @State private var webClosed = 0
     @State private var hasAddress = AppInfo.address != nil
     @State private var addressText = AppInfo.address?.absoluteString ?? ""
@@ -27,7 +27,7 @@ struct RootView: View {
     @StateObject private var registry = PartRegistry()
     @AppStorage("FingusAddedParts") private var addedRaw = PartsSelection.encode(PartsSelection.standard)
     @AppStorage("FingusPartsHome") private var partsHome = false
-    @State private var showYou = false
+    @State private var showYou = DemoMode.page == "you"
     @State private var openAfterYou = false
 
     private func setChat(_ on: Bool) {
@@ -60,12 +60,12 @@ struct RootView: View {
                     }
                     }
                     // Chat is a page that comes in over the calendar and goes back the same way; the web view is where Face ID unlocks Locked
-                    if showChat && !hasAddress {
+                    if showChat && !hasAddress && !DemoMode.chatDemo {
                         ChatNeedsPCScreen(back: { setChat(false) }, connect: { setChat(false); showWeb = true })
                             .transition(.move(edge: .trailing))
                             .zIndex(1)
                     }
-                    if showChat && hasAddress {
+                    if showChat && (hasAddress || DemoMode.chatDemo) {
                         ChatScreen(back: { setChat(false) },
                                    unlock: { showWeb = true },
                                    returned: webClosed)

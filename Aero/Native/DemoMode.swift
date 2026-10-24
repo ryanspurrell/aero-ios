@@ -10,6 +10,22 @@ enum DemoMode {
     static var quickAddLine: String? { UserDefaults.standard.string(forKey: "aero-demo-quickadd") }
     /// -aero-demo-screen day|week|month|year: open the calendar on that view
     static var screen: CalendarSpan? { UserDefaults.standard.string(forKey: "aero-demo-screen").flatMap { CalendarSpan(rawValue: $0) } }
+    /// -aero-demo-page shopping|you|chatlist|chat|location: open that page at launch, for the screenshots (with -aero-demo phone; location and a
+    /// parts home also want -FingusPartsHome YES and an AeroServerAddress, so the part tiles that need a PC are drawn)
+    static var page: String? { isOn ? UserDefaults.standard.string(forKey: "aero-demo-page") : nil }
+    static var chatDemo: Bool { page == "chatlist" || page == "chat" }
+    /// Invented chats for the picture: nothing is asked of a server and nothing is kept.
+    static let chatRows: [ChatRoomRow] = [
+        ChatRoomRow(id: "demo-1", name: "Weekend plans", pinned: true, unread: 2, members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: nil)]),
+        ChatRoomRow(id: "demo-2", name: "Groceries", members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: nil)]),
+        ChatRoomRow(id: "demo-3", name: "Locked: notes", isLocked: true, members: []),
+    ]
+    static let chatLines: [ChatLine] = [
+        ChatLine(id: "1", side: .mine, speaker: nil, text: "What is on for Saturday?", at: nil, streaming: false, unreadable: false),
+        ChatLine(id: "2", side: .theirs, speaker: nil, text: "Market with Sam at 10, then the library books are due.", at: nil, streaming: false, unreadable: false),
+        ChatLine(id: "3", side: .mine, speaker: nil, text: "Add a reminder to bring bags", at: nil, streaming: false, unreadable: false),
+        ChatLine(id: "4", side: .theirs, speaker: nil, text: "Done: bring bags, Saturday 9:30.", at: nil, streaming: false, unreadable: false),
+    ]
     /// -aero-demo-extras 1: draw Carry on and the small keys with invented content, to see the whole home of the mock
     static var showExtras: Bool { isOn && UserDefaults.standard.bool(forKey: "aero-demo-extras") }
     /// -aero-demo-tab lists: open on the Lists tab
