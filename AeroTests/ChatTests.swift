@@ -180,7 +180,9 @@ final class ChatTests: XCTestCase {
         let ai = ChatMember(kind: "model", name: "fingus", nick: nil, model: nil)
         let me = ChatMember(kind: "person", name: "owner", nick: nil, model: nil)
         XCTAssertEqual(ChatListing.title(ChatRoomRow(id: "r1", name: "Plans", members: [me, ai]), me: "owner"), "Plans")
-        XCTAssertEqual(ChatListing.title(ChatRoomRow(id: "r1", name: "", members: [me, ai]), me: "owner"), "Fingus")
+        // a chat with only the AI is not called by the AI's name, which every such chat shares (Aryn, 2026-10-23: they all showed "Fingus")
+        XCTAssertNotEqual(ChatListing.title(ChatRoomRow(id: "r1", name: "", members: [me, ai]), me: "owner"), "Fingus")
+        XCTAssertEqual(ChatListing.title(ChatRoomRow(id: "r1", name: "", members: [me, ai]), me: "owner"), ChatWords.newChat)
         XCTAssertEqual(ChatListing.title(ChatRoomRow(id: "r1", name: nil, members: [me]), me: "owner"), "Just you")
         XCTAssertEqual(ChatListing.title(ChatRoomRow(id: "r1", name: nil, members: [me, ChatMember(kind: "person", name: "sam", nick: "Sammy", model: nil)]), me: "owner"), "Sammy")
     }

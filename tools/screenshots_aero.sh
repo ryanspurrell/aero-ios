@@ -26,5 +26,7 @@ shoot chat -aero-demo-page chat
 shoot partshome -FingusPartsHome YES -FingusAddedParts organizer,messages,photos,location -AeroServerAddress http://127.0.0.1:9
 shoot location -FingusPartsHome YES -FingusAddedParts organizer,messages,photos,location -AeroServerAddress http://127.0.0.1:9 -aero-demo-page location
 shoot you -aero-demo-page you
+shoot devices -aero-demo-page devices
+shoot devices-approve -aero-demo-page devices-approve
 xcrun simctl shutdown "$udid" || true
 ls -l "$out"

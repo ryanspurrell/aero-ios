@@ -14,12 +14,32 @@ enum DemoMode {
     /// parts home also want -FingusPartsHome YES and an AeroServerAddress, so the part tiles that need a PC are drawn)
     static var page: String? { isOn ? UserDefaults.standard.string(forKey: "aero-demo-page") : nil }
     static var chatDemo: Bool { page == "chatlist" || page == "chat" }
-    /// Invented chats for the picture: nothing is asked of a server and nothing is kept.
+    /// -aero-demo-page devices (this phone waiting) or devices-approve (this phone approved, another waiting): the Devices screen over You.
+    static var devicesDemo: Bool { page == "devices" || page == "devices-approve" }
+    static let thisDeviceID = "demo-phone"
+    /// Invented devices for the picture: names are the fruit names Aero gives, ids and keys are invented.
+    static var deviceRows: [DeviceRow] {
+        let now = Date().timeIntervalSince1970
+        func row(_ id: String, _ name: String, _ kind: String, daysAgo: Double, trusted: Bool = true) -> DeviceRow {
+            DeviceRow(device: id, name: name, kind: kind, added: now - daysAgo * 86_400, trusted: trusted, approvedBy: trusted ? "machine" : nil, ecdh: "invented", sign: "invented")
+        }
+        let phoneWaiting = page == "devices"
+        return [
+            row("demo-pc", "Kiwi", "This PC", daysAgo: 40),
+            row("demo-web", "Sapodilla", "iPhone (browser)", daysAgo: 18),
+            row(thisDeviceID, "Coconut", "iPhone (Aero app)", daysAgo: 0.1, trusted: !phoneWaiting),
+        ] + (phoneWaiting ? [] : [row("demo-new", "Tamarind", "Safari on iPhone", daysAgo: 0.02, trusted: false)])
+    }
+    /// Invented chats for the picture: nothing is asked of a server and nothing is kept. The last has no name yet, so its row says when it was
+    /// last used; none is called by the AI's name.
     static let chatRows: [ChatRoomRow] = [
-        ChatRoomRow(id: "demo-1", name: "Weekend plans", pinned: true, unread: 2, members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: nil)]),
-        ChatRoomRow(id: "demo-2", name: "Groceries", members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: nil)]),
+        ChatRoomRow(id: "demo-1", name: "Weekend plans", pinned: true, unread: 2, members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: "llama-demo:8b")]),
+        ChatRoomRow(id: "demo-2", name: "Groceries", members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: "llama-demo:8b")]),
+        ChatRoomRow(id: "demo-4", name: nil, touched: Date().timeIntervalSince1970 - 3_600, members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: "llama-demo:8b")]),
+        ChatRoomRow(id: "demo-5", name: "", touched: Date().timeIntervalSince1970 - 90_000, members: [ChatMember(kind: "model", name: "fingus", nick: nil, model: "qwen-demo:4b")]),
         ChatRoomRow(id: "demo-3", name: "Locked: notes", isLocked: true, members: []),
     ]
+    static let chatModels = ["llama-demo:8b", "qwen-demo:4b", "auto"]
     static let chatLines: [ChatLine] = [
         ChatLine(id: "1", side: .mine, speaker: nil, text: "What is on for Saturday?", at: nil, streaming: false, unreadable: false),
         ChatLine(id: "2", side: .theirs, speaker: nil, text: "Market with Sam at 10, then the library books are due.", at: nil, streaming: false, unreadable: false),

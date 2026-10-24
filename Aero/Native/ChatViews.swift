@@ -135,6 +135,9 @@ private struct ChatListPage: View {
                     if let choice = model.renewalChoice {
                         ChatRenewalChoiceNote(rooms: choice.rooms, accept: { Task { await model.acceptRenewalLoss() } }, decline: { model.declineRenewalLoss() })
                     }
+                    if let waiting = model.waiting {
+                        ChatWaitingNote(name: waiting.name, check: { Task { await model.load() } })
+                    }
                     if let stopped = model.stopped {
                         ChatStoppedNote(stopped: stopped, key: { Task { await model.load() } })
                     }
@@ -142,7 +145,7 @@ private struct ChatListPage: View {
                         Text(ChatWords.empty).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).padding(.top, Look.Space.gap)
                     }
                     ForEach(model.shown) { row in
-                        ChatRow(row: row, me: model.me) { open(row) }
+                        ChatRow(row: row, title: model.title(row)) { open(row) }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -157,14 +160,14 @@ private struct ChatListPage: View {
 
 private struct ChatRow: View {
     let row: ChatRoomRow
-    let me: String
+    let title: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: Look.Space.snug) {
                 VStack(alignment: .leading, spacing: Look.Space.hair) {
-                    Text(ChatListing.title(row, me: me)).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg).lineLimit(1)
+                    Text(title).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg).lineLimit(1)
                     if let note = ChatWords.rowNote(ChatListing.unreadWords(row), locked: row.locked) {
                         HStack(spacing: Look.Space.hair) {
                             if row.locked { Image(systemName: "lock.fill").font(.system(size: 11, weight: .bold)) }
@@ -243,11 +246,14 @@ private struct ChatRoomPage: View {
     var unlock: () -> Void
     @FocusState private var focused: Bool
     @State private var showSafety = false
+    @State private var showModels = false
+    @State private var showRename = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
             header
+            modelChip
             content
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -258,8 +264,42 @@ private struct ChatRoomPage: View {
             SafetySheet(rows: model.safety, accept: { model.accept($0) })
                 .presentationDetents([.medium, .large])
         }
+        .sheet(isPresented: $showModels) {
+            ModelSheet(model: model) { showModels = false }
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showRename) {
+            RenameSheet(current: model.title == ChatWords.newChat ? "" : model.title, save: { name in
+                showRename = false
+                Task { await model.rename(to: name) }
+            }, cancel: { showRename = false })
+            .presentationDetents([.medium])
+        }
         .task { await model.load() }
         .onDisappear { model.leave() }
+    }
+
+    /// Which model answers, under the title, and a key to change it (the page's model pill). Hidden until the chat has said which.
+    @ViewBuilder private var modelChip: some View {
+        if model.phase != .locked, let name = model.modelName {
+            Button {
+                showModels = true
+                Task { await model.loadChoices() }
+            } label: {
+                HStack(spacing: Look.Space.hair) {
+                    Image(systemName: "cpu").font(.system(size: 11, weight: .bold))
+                    Text(ChatWords.modelChip(name)).fx(Look.Size.pill, style: .footnote).lineLimit(1)
+                    Image(systemName: "chevron.down").font(.system(size: 10, weight: .bold))
+                }
+                .foregroundStyle(Look.Palette.fg)
+                .padding(.horizontal, Look.Space.snug).frame(minHeight: Look.Space.sizeTap)
+                .background(Capsule().fill(Look.Palette.card))
+            }
+            .buttonStyle(BubblePressStyle())
+            .accessibilityLabel(ChatWords.modelLabel(name))
+            .accessibilityIdentifier("chat-model")
+            .padding(.horizontal, Look.Space.gutter)
+        }
     }
 
     private var header: some View {
@@ -290,6 +330,16 @@ private struct ChatRoomPage: View {
                 }
                 .foregroundStyle(Look.Palette.soft)
             }
+            if model.phase == .ready && !model.isNew {
+                Menu {
+                    Button { showRename = true } label: { Label(ChatWords.renameKey, systemImage: "pencil") }
+                    Button { showModels = true; Task { await model.loadChoices() } } label: { Label(ChatWords.modelTitle, systemImage: "cpu") }
+                } label: {
+                    Image(systemName: "ellipsis").font(.system(size: 17, weight: .semibold)).foregroundStyle(Look.Palette.soft)
+                        .frame(width: Look.Space.sizeTap, height: Look.Space.sizeTap)
+                }
+                .accessibilityLabel(ChatWords.menu)
+            }
         }
         .padding(.horizontal, Look.Space.gutter)
         .overlay {
@@ -316,7 +366,8 @@ private struct ChatRoomPage: View {
         case .waitingForKeys:
             VStack(spacing: Look.Space.snug) {
                 ProgressView()
-                Text(ChatWords.waitingForKeys).fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).multilineTextAlignment(.center)
+                Text(model.waitingForApproval.map { ChatWords.waitingNote($0.name) } ?? ChatWords.waitingForKeys)
+                    .fx(Look.Size.calm, style: .subheadline).foregroundStyle(Look.Palette.soft).multilineTextAlignment(.center)
                 Button { Task { await model.load() } } label: {
                     Text("Try again").fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
                         .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
@@ -406,6 +457,112 @@ private struct ChatRoomPage: View {
             .disabled(!typed || model.sending)
             .accessibilityLabel(ChatWords.send)
         }
+    }
+}
+
+// MARK: the model and the name
+
+/// The models this chat may use, one tap to switch; the one in use is marked with a check and its words, not colour alone.
+private struct ModelSheet: View {
+    @ObservedObject var model: ChatRoomModel
+    var done: () -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: Look.Space.tight) {
+                Text(ChatWords.modelTitle).fx(Look.Size.head, style: .title3).foregroundStyle(Look.Palette.fg)
+                if model.privacy == .locked {
+                    Text(ChatWords.modelNote).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
+                }
+                if model.modelChoices.isEmpty {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, Look.Space.section)
+                }
+                ForEach(model.modelChoices, id: \.self) { name in
+                    let current = name == model.modelName
+                    Button {
+                        Task { await model.chooseModel(name); done() }
+                    } label: {
+                        HStack(spacing: Look.Space.snug) {
+                            VStack(alignment: .leading, spacing: Look.Space.hair) {
+                                Text(ChatModelPick.shown(name)).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg)
+                                Text(ChatModelPick.note(name)).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
+                            }
+                            Spacer(minLength: 0)
+                            if current { Image(systemName: "checkmark").font(.system(size: 15, weight: .bold)).foregroundStyle(Look.Palette.fg) }
+                        }
+                        .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.padY)
+                        .frame(maxWidth: .infinity, minHeight: Look.Space.sizeControl, alignment: .leading)
+                        .fingusCard(radius: Look.Bubble.radiusRow)
+                    }
+                    .buttonStyle(BubblePressStyle())
+                    .accessibilityLabel(ChatModelPick.shown(name) + ". " + ChatModelPick.note(name) + (current ? ". In use" : ""))
+                    .accessibilityAddTraits(current ? .isSelected : [])
+                }
+                Button(action: done) {
+                    Text("Done").fx(Look.Size.tab, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
+                }
+            }
+            .padding(Look.Space.gutter)
+        }
+        .fingusGround()
+    }
+}
+
+/// A name for the chat, kept as hers: the PC stops naming it. Empty lets it name the chat again.
+private struct RenameSheet: View {
+    @State var text: String
+    let save: (String) -> Void
+    let cancel: () -> Void
+
+    init(current: String, save: @escaping (String) -> Void, cancel: @escaping () -> Void) {
+        _text = State(initialValue: current)
+        self.save = save
+        self.cancel = cancel
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Look.Space.snug) {
+            Text(ChatWords.renameTitle).fx(Look.Size.head, style: .title3).foregroundStyle(Look.Palette.fg)
+            TextField("", text: $text, prompt: Text(ChatWords.renamePrompt).foregroundColor(Look.Palette.inputText))
+                .fx(Look.Size.input, style: .body).foregroundStyle(Look.Palette.fg)
+                .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeControl)
+                .background(RoundedRectangle(cornerRadius: Look.Bubble.radiusRow, style: .continuous).fill(Look.Palette.input))
+                .accessibilityIdentifier("chat-rename-field")
+            HStack(spacing: Look.Space.tight) {
+                Button { save(text) } label: {
+                    Text(text.trimmingCharacters(in: .whitespaces).isEmpty ? ChatWords.renameClear : ChatWords.renameSave)
+                        .fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.ink)
+                        .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
+                        .background(Capsule().fill(Look.Palette.accent))
+                }
+                .buttonStyle(BubblePressStyle())
+                Button(action: cancel) {
+                    Text("Cancel").fx(Look.Size.pill, style: .footnote).foregroundStyle(Look.Palette.soft)
+                        .padding(.horizontal, Look.Space.pad).frame(minHeight: Look.Space.sizeTap)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Look.Space.gutter)
+        .fingusGround()
+    }
+}
+
+/// This phone is waiting for a device she already uses to approve it: its own fruit name, and where to approve it.
+struct ChatWaitingNote: View {
+    let name: String?
+    let check: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Look.Space.tight) {
+            Text(ChatWords.waitingTitle).fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg)
+            Text(ChatWords.waitingNote(name)).fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
+            FingusKey(title: ChatWords.waitingCheck, action: check)
+        }
+        .padding(.horizontal, Look.Space.pad).padding(.vertical, Look.Space.padY)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .fingusCard(radius: Look.Bubble.radiusCard)
+        .accessibilityElement(children: .contain)
     }
 }
 

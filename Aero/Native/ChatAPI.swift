@@ -11,7 +11,15 @@ import WebKit
 ///   GET  rooms/<id>/busy                  whether a reply is being written now
 ///   GET  rooms/people.json                the models a new chat may use
 ///   GET  devices.json?people=a,b          public keys of devices, to seal a new chat's key to
-///   POST devices                          this phone as a device {device, ecdh, sign, label}; refused with {"error", "devices_full": n} at the most, or {"device_removed": true} for a device she removed
+///   POST devices                          this phone as a device {device, ecdh, sign, label}; answers {ok, trusted, name}: a new device waits for a
+///                                         device she already uses to approve it (name is its own fruit name); an older Aero answers {ok} and
+///                                         refused with {"error", "devices_full": n} at the most, or {"device_removed": true} for a device she removed
+///   GET  devices/mine.json                her devices for chats: {now, devices: [{device, name, kind, added, trusted, approved_by, ecdh, sign}]}
+///   POST devices/approve                  {by, device, ts, proof}: `by` (a trusted device) signed "approve|<person>|<device>|<ecdh>|<sign>|<ts>"
+///   POST devices/remove                   {by, device, ts, proof}: signed "remove|<person>|<device>|<ts>" (the older {device, replaced_by} still goes here)
+///   POST devices/rename                   {device, name}: a label only, never what makes a device trusted
+///   POST rooms/<id>/ai                    {name, fields: {model}}: switch an AI member's model
+///   POST rooms/<id>/name                  {name}: a person's name for the chat (the PC then leaves it as it is)
 ///   POST devices/remove                   one of this person's own devices {device, replaced_by?}, taken out of their list (refused with 409 if it is the only holder of a chat's key, or the replacement cannot open everything it can yet)
 ///   POST rooms/new                        a new chat {device, room, name, members, seals, private}
 ///   POST rooms/<id>/send                  a sealed message {device, epoch, mentions, iv, ct, sig}
@@ -192,9 +200,58 @@ final class ChatAPI {
 
     // MARK: writing
 
-    func register(device: ChatDevice, label: String) async throws {
+    @discardableResult
+    func register(device: ChatDevice, label: String) async throws -> ChatRegistration {
         struct Body: Encodable { var device: String; var ecdh: String; var sign: String; var label: String }
-        _ = try await post("devices", Body(device: device.id, ecdh: device.ecdhPublic, sign: device.signPublic, label: label))
+        let data = try await post("devices", Body(device: device.id, ecdh: device.ecdhPublic, sign: device.signPublic, label: label))
+        return ChatRegistration.read(data)
+    }
+
+    // MARK: this person's chat devices
+
+    func devicesMine() async throws -> DevicesAnswer {
+        try await get("devices/mine.json", as: DevicesAnswer.self)
+    }
+
+    struct Signed: Encodable {
+        var by: String
+        var device: String
+        var ts: Int
+        var proof: String
+    }
+
+    func approveDevice(_ body: Signed) async throws {
+        _ = try await post("devices/approve", body)
+    }
+
+    /// Take a device out of the list, signed by a device already trusted. Aero says "That device isn't in your list." for one that is gone,
+    /// which is what was asked for.
+    func removeDeviceSigned(_ body: Signed) async throws {
+        do { _ = try await post("devices/remove", body) }
+        catch let f as Failure where ChatAPI.alreadyGone(f) { return }
+    }
+
+    /// Its name after the change (Aero trims it and refuses a name another device has).
+    func renameDevice(_ device: String, to name: String) async throws -> String {
+        struct Body: Encodable { var device: String; var name: String }
+        struct Done: Decodable { var name: String? }
+        let data = try await post("devices/rename", Body(device: device, name: name))
+        return ((try? decoder.decode(Done.self, from: data))?.name) ?? name
+    }
+
+    // MARK: one chat's settings
+
+    /// Switch the model of one AI member of a chat. Aero refuses a model this person could not add themselves.
+    func setModel(room: String, member: String, model: String) async throws {
+        struct Fields: Encodable { var model: String }
+        struct Body: Encodable { var name: String; var fields: Fields }
+        _ = try await post("rooms/\(room)/ai", Body(name: member, fields: Fields(model: model)))
+    }
+
+    /// A person's name for the chat. An empty name clears it and the PC names the chat again.
+    func renameRoom(_ room: String, to name: String) async throws {
+        struct Body: Encodable { var name: String }
+        _ = try await post("rooms/\(room)/name", Body(name: name))
     }
 
     /// What Aero says to a device that is not in the person's list: it is already gone, which is what was asked for.

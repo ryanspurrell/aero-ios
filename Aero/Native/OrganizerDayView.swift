@@ -128,32 +128,74 @@ struct OrganizerDayScreen: View {
         .padding(.horizontal, Look.Space.gutter)
     }
 
-    /// Underline tabs around the one held date: Day, Week, Month, Year and Lists. With a PC, Lists opens the PC's own lists in the web view.
+    /// Underline tabs around the one held date: Day, Week, Month, Year, Lists, Shopping and Chat. With a PC, Lists opens the PC's own lists in
+    /// the web view. They are laid out in the first of these that fits the width: the usual gap, the narrow gap, and last a row that scrolls with
+    /// its right edge faded and a key with an arrow that moves it on (a swipe is not the only way to the last tabs). A tab is never cut off by
+    /// the edge without a sign that there is more (Aryn, 2026-10-23: "a clipped sliver at the right edge").
     private var tabs: some View {
         VStack(spacing: 0) {
-            ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Look.Space.pad) {
-                if store.answer?.mode == .simple {
-                    tab("Today", selected: true) {}
-                } else {
-                    ForEach(DayTab.allCases.filter { $0 != .lists }) { t in
-                        tab(t.title, selected: store.tab == t) { Task { await switchTo(t) } }
-                    }
-                    if store.backendKind == .phone { tab(DayTab.lists.title, selected: store.tab == .lists) { Task { await switchTo(.lists) } } }
-                }
-                if store.backendKind == .pc { tab(DayTab.lists.title, selected: false) { openLists() } }
-                tab("Shopping", selected: false) { showShopping = true }
-                if let openChat { tab(ChatWords.tab, selected: false) { openChat() } }
-                Spacer(minLength: 0)
-            }
+            ViewThatFits(in: .horizontal) {
+                tabRow(spacing: Look.Space.pad)
+                tabRow(spacing: Look.Space.tight)
+                scrollingTabs
             }
             Rectangle().fill(Look.Palette.rule).frame(height: 2)
         }
     }
 
+    private func tabRow(spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
+            tabItems
+            Spacer(minLength: 0)
+        }
+    }
+
+    @ViewBuilder private var tabItems: some View {
+        if store.answer?.mode == .simple {
+            tab("Today", selected: true) {}
+        } else {
+            ForEach(DayTab.allCases.filter { $0 != .lists }) { t in
+                tab(t.title, selected: store.tab == t) { Task { await switchTo(t) } }
+            }
+            if store.backendKind == .phone { tab(DayTab.lists.title, selected: store.tab == .lists) { Task { await switchTo(.lists) } } }
+        }
+        if store.backendKind == .pc { tab(DayTab.lists.title, selected: false) { openLists() } }
+        tab("Shopping", selected: false) { showShopping = true }
+        if let openChat { tab(ChatWords.tab, selected: false) { openChat() } }
+    }
+
+    /// When the tabs do not fit even with the narrow gap: they scroll, the right edge fades, and the arrow key scrolls to the last one.
+    private var scrollingTabs: some View {
+        ScrollViewReader { proxy in
+            HStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: Look.Space.tight) {
+                        tabItems
+                        Color.clear.frame(width: Look.Space.hairline, height: Look.Space.hairline).id(Self.lastTab)
+                    }
+                }
+                .mask(
+                    HStack(spacing: 0) {
+                        Rectangle()
+                        LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing).frame(width: Look.Space.gutter)
+                    }
+                )
+                Button {
+                    withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { proxy.scrollTo(Self.lastTab, anchor: .trailing) }
+                } label: {
+                    Image(systemName: "chevron.right").font(.system(size: 15, weight: .bold)).foregroundStyle(Look.Palette.soft)
+                        .frame(width: Look.Space.sizeTap, height: Look.Space.sizeTap)
+                }
+                .accessibilityLabel("More tabs")
+            }
+        }
+    }
+
+    private static let lastTab = "tabs-last"
+
     private func tab(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(title).fx(Look.Size.tab, style: .subheadline)
+            Text(title).fx(Look.Size.tab, style: .subheadline).lineLimit(1).fixedSize(horizontal: true, vertical: false)
                 .foregroundStyle(selected ? Look.Palette.fg : Look.Palette.soft)
                 .padding(.vertical, Look.Space.snug)
                 .overlay(alignment: .bottom) { if selected { Rectangle().fill(Look.Palette.fg).frame(height: 3).offset(y: 1) } }

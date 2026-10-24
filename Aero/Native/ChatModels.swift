@@ -234,11 +234,46 @@ enum ChatTranscript {
 // MARK: the list
 
 enum ChatListing {
-    /// What a chat is called: its own name, else the others in it (a name they set for themselves in the chat, else their account's), else "Just you".
-    static func title(_ room: ChatRoomRow, me: String) -> String {
+    /// What a chat is called: its own name (the PC names a chat after a few messages, or she renames it); else, in a chat with other people, who
+    /// they are (a name they set for themselves in the chat, else their account's); else, in a chat with only an AI, its first words where they
+    /// are known on this phone, else the day and time it was last used. Never the AI's own name, which every such chat shares ("Fingus"
+    /// on every row, Aryn 2026-10-23); "New chat" when there is nothing else to go on.
+    static func title(_ room: ChatRoomRow, me: String, firstWords: String? = nil, now: Date = Date(), calendar: Calendar = .current, locale: Locale = .current) -> String {
         if let name = room.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
-        let others = (room.members ?? []).filter { !($0.kind == "person" && $0.name == me) }.map { shownName($0) }
-        return others.isEmpty ? "Just you" : others.joined(separator: ", ")
+        let others = (room.members ?? []).filter { $0.kind == "person" && $0.name != me }.map { shownName($0) }
+        if !others.isEmpty { return others.joined(separator: ", ") }
+        let members = room.members ?? []
+        if !members.isEmpty && !members.contains(where: { $0.kind == "model" }) { return "Just you" }
+        if let words = firstWords?.trimmingCharacters(in: .whitespacesAndNewlines), !words.isEmpty { return words }
+        if let touched = room.touched, touched > 0 { return dateWords(Date(timeIntervalSince1970: touched), now: now, calendar: calendar, locale: locale) }
+        return ChatWords.newChat
+    }
+
+    /// The first few words of what was said, to stand for a chat that has no name yet: at most `ChatListing.firstWordsMost` words and
+    /// `firstWordsLength` characters, on one line. Picked, not grounded: a row has room for about this much at the list's type size.
+    static let firstWordsMost = 6
+    static let firstWordsLength = 32
+
+    static func firstWords(of text: String) -> String? {
+        let words = text.split(whereSeparator: { $0.isWhitespace }).prefix(firstWordsMost).joined(separator: " ")
+        if words.isEmpty { return nil }
+        if words.count <= firstWordsLength { return words }
+        let cut = String(words.prefix(firstWordsLength)).trimmingCharacters(in: .whitespaces)
+        return cut + "\u{2026}"
+    }
+
+    /// "Today, 9:41 pm", "Yesterday, 3:05 pm", or "Oct 22, 3:05 pm", in the person's own locale and clock.
+    static func dateWords(_ date: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
+        let clock = DateFormatter()
+        clock.locale = locale; clock.calendar = calendar; clock.timeZone = calendar.timeZone
+        clock.setLocalizedDateFormatFromTemplate("jmm")
+        let time = clock.string(from: date)
+        if calendar.isDate(date, inSameDayAs: now) { return "Today, \(time)" }
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now), calendar.isDate(date, inSameDayAs: yesterday) { return "Yesterday, \(time)" }
+        let day = DateFormatter()
+        day.locale = locale; day.calendar = calendar; day.timeZone = calendar.timeZone
+        day.setLocalizedDateFormatFromTemplate("MMMd")
+        return "\(day.string(from: date)), \(time)"
     }
 
     static func shownName(_ m: ChatMember) -> String {
@@ -276,6 +311,30 @@ enum ChatModelPick {
     }
 }
 
+extension ChatModelPick {
+    /// The models a chat may be switched to: the ones Aero offers (`rooms/people.json`); a Locked chat only the ones that run on the PC (the
+    /// page's own rule for a private chat, `localModels`). The model it has now is always in the list, first when Aero no longer offers it.
+    static func choices(from models: [String], privacy: ChatPrivacy, current: String?) -> [String] {
+        var list = privacy == .locked ? models.filter(runsOnThePC) : models
+        if let current, !current.isEmpty, !list.contains(current) { list.insert(current, at: 0) }
+        return list
+    }
+
+    /// A model as the screen says it: "auto" is Automatic (Aero picks), anything else is its own name.
+    static func shown(_ model: String) -> String {
+        if model == "auto" { return "Automatic" }
+        if model.hasPrefix("auto:") { return "Automatic: " + model.dropFirst(5) }
+        return model
+    }
+
+    /// One line under a choice, from the page's own words (messages.js, "Who sees this"): where it runs, or what it is given.
+    static func note(_ model: String) -> String {
+        if runsOnThePC(model) { return "Runs on your PC" }
+        if model.lowercased().hasPrefix("claude") { return "Gets this chat's messages, through Anthropic" }
+        return "Gets this chat's messages"
+    }
+}
+
 // MARK: waiting for a reply
 
 /// When to keep asking for a reply. The page is pushed each change; the app asks again and again (the interval is picked, not grounded: a
@@ -290,4 +349,41 @@ enum ChatPollPlan {
         if sawReply { return false }
         return secondsSinceSend < waitForStart
     }
+}
+
+// MARK: this phone as a device
+
+/// What Aero answers when this phone says it is a device: whether a device she already uses has approved it, and the fruit name Aero gave it.
+/// An older Aero answers only {ok}: it had no approval, so a missing `trusted` is read as trusted.
+struct ChatRegistration: Equatable {
+    var trusted: Bool
+    var name: String?
+
+    static func read(_ data: Data) -> ChatRegistration {
+        struct Said: Decodable { var trusted: Bool?; var name: String? }
+        let said = try? JSONDecoder().decode(Said.self, from: data)
+        return ChatRegistration(trusted: said?.trusted ?? true, name: said?.name)
+    }
+}
+
+/// One of the person's devices for chats, as `devices/mine.json` lists it (public information only).
+struct DeviceRow: Codable, Equatable, Identifiable {
+    var device: String
+    var name: String?
+    var kind: String?
+    var added: Double?
+    var trusted: Bool
+    var approvedBy: String?
+    var ecdh: String
+    var sign: String
+    var id: String { device }
+    enum CodingKeys: String, CodingKey { case device, name, kind, added, trusted, ecdh, sign; case approvedBy = "approved_by" }
+
+    var shownName: String { (name ?? "").isEmpty ? "A device" : name! }
+}
+
+/// GET devices/mine.json: the server's clock (`now`, seconds) beside the list, because a signature is good only for a few minutes of the server's time.
+struct DevicesAnswer: Codable, Equatable {
+    var now: Double
+    var devices: [DeviceRow]
 }

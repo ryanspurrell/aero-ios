@@ -27,7 +27,7 @@ struct RootView: View {
     @StateObject private var registry = PartRegistry()
     @AppStorage("FingusAddedParts") private var addedRaw = PartsSelection.encode(PartsSelection.standard)
     @AppStorage("FingusPartsHome") private var partsHome = false
-    @State private var showYou = DemoMode.page == "you"
+    @State private var showYou = DemoMode.page == "you" || DemoMode.devicesDemo
     @State private var openAfterYou = false
 
     private func setChat(_ on: Bool) {

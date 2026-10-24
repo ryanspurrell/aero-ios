@@ -147,6 +147,16 @@ final class ChatSession {
     private(set) var person = ""
     private var device: ChatDevice?
     private var registered = false
+    /// What Aero said when this phone last said it is a device: its fruit name, and whether a device she already uses has approved it. A device
+    /// that is waiting is sealed no chat keys, so its chats cannot open until it is approved.
+    private(set) var registration: ChatRegistration?
+    /// The id of this phone as a chat device, once it has been made.
+    var deviceID: String? { device?.id }
+    /// Set when this phone is waiting for approval: the words for it need its name.
+    var waitingForApproval: ChatRegistration? { registration.flatMap { $0.trusted ? nil : $0 } }
+    /// The first words of a chat opened on this phone, to stand for it in the list while it has no name. In memory only, never for a Locked chat,
+    /// and gone with the account.
+    private(set) var firstWords: [String: String] = [:]
     /// Room keys opened on this phone, by "<room>|<epoch>". Kept in memory only; the sealed keys stay on the server.
     private(set) var keys: [String: SymmetricKey] = [:]
     /// Changes whenever the account changes or signs out; anything asked before the change is dropped when it answers.
@@ -180,6 +190,8 @@ final class ChatSession {
         deviceFlight.forget()
         device = nil
         registered = false
+        registration = nil
+        firstWords = [:]
         keys = [:]
         renewalProblem = nil
         renewalChoice = nil
@@ -228,19 +240,36 @@ final class ChatSession {
         var current: ChatDevice
         if let have = device { current = have } else { current = try ChatDeviceKeeper.device(for: person, in: keyStore) }
         if !registered {
-            do { try await api.register(device: current, label: ChatWords.deviceLabel) }
+            var said: ChatRegistration
+            do { said = try await api.register(device: current, label: ChatWords.deviceLabel) }
             catch ChatAPI.Failure.deviceRemoved {
                 // removed from the person's list but still has its keys: it starts again with new ones, as a new device
                 current = try ChatDeviceKeeper.startAgain(for: person, in: keyStore)
-                try await api.register(device: current, label: ChatWords.deviceLabel)
+                said = try await api.register(device: current, label: ChatWords.deviceLabel)
                 renewedKeys = true
             }
             guard g == generation else { throw ChatStale() }
+            registration = said
             registered = true
         }
         if firstThisLaunch, let moved = await renewIfSafe(current) { current = moved }
         device = current
         return current
+    }
+
+    /// While this phone waits for approval, asks Aero whether it has been given yet (a device she already uses approves it; Aero then has the PC
+    /// share the keys it holds). Does nothing once it is approved, and nothing when Aero cannot be asked: it stays waiting.
+    func refreshTrust() async {
+        guard let id = device?.id, registration?.trusted == false else { return }
+        let g = generation
+        guard let mine = try? await api.devicesMine(), g == generation, let row = mine.devices.first(where: { $0.device == id }) else { return }
+        registration = ChatRegistration(trusted: row.trusted, name: row.name ?? registration?.name)
+    }
+
+    /// Remember the first words of a chat for its row. Not for a Locked chat.
+    func noteFirstWords(room: String, from text: String, locked: Bool) {
+        guard !locked, firstWords[room] == nil, let words = ChatListing.firstWords(of: text) else { return }
+        firstWords[room] = words
     }
 
     /// A device made by an earlier build with raw keys, on a phone with a Secure Enclave, is moved to the Secure Enclave, but only
@@ -376,11 +405,18 @@ final class ChatListModel: ObservableObject {
     @Published private(set) var stopped: ChatStopped?
     /// Asked when the old keys cannot open some chats (see `ChatSession.renewalChoice`); read from the session after each load and answer.
     @Published private(set) var renewalChoice: ChatRenewalChoice?
+    /// Set while this phone waits for a device she already uses to approve it (its fruit name is in it).
+    @Published private(set) var waiting: ChatRegistration?
 
     let session: ChatSession
 
     init(session: ChatSession) {
         self.session = session
+    }
+
+    /// What a row is called: its name, who is in it, its first words if they are known here, or when it was last used.
+    func title(_ row: ChatRoomRow) -> String {
+        ChatListing.title(row, me: me, firstWords: session.firstWords[row.id])
     }
 
     var me: String { session.me }
@@ -408,6 +444,12 @@ final class ChatListModel: ObservableObject {
             lockedOpen = open
             rooms = got.answer.rooms
             loaded = true
+            // this phone is made a device of the person here, as the page does on opening Talk, so the list can say when it still waits
+            // for approval; a failure shows when a chat is opened
+            _ = try? await session.ensureDevice()
+            await session.refreshTrust()
+            guard token == loadToken, got.generation == session.generation else { return }
+            waiting = session.waitingForApproval
             renewalChoice = session.renewalChoice
         } catch is ChatStale {
             return
@@ -441,6 +483,7 @@ final class ChatListModel: ObservableObject {
     /// Everything drawn for the last account.
     func clear() {
         loadToken += 1
+        waiting = nil
         rooms = []
         loaded = false
         stopped = nil
@@ -462,6 +505,13 @@ final class ChatRoomModel: ObservableObject {
     @Published private(set) var sending = false
     @Published private(set) var safety: [ChatSafetyRow] = []
     @Published var draft = ""
+    /// The model answering in this chat (the first AI member's), or for a chat not yet started the one it will start with; nil when none is known.
+    @Published private(set) var modelName: String?
+    /// The models it may be switched to, read when the chooser opens (and for a new chat when it opens).
+    @Published private(set) var modelChoices: [String] = []
+    @Published private(set) var changing = false
+    /// Set while this phone waits for a device she already uses to approve it.
+    @Published private(set) var waitingForApproval: ChatRegistration?
 
     let session: ChatSession
     let privacy: ChatPrivacy
@@ -469,6 +519,8 @@ final class ChatRoomModel: ObservableObject {
 
     private var epoch = 0
     private var members: [ChatMember] = []
+    /// The name of the AI member whose model is switched (its name in the chat, not its model).
+    private var modelMember: String { members.first(where: { $0.kind == "model" })?.name ?? "fingus" }
     private var wire: [Int: ChatWireMessage] = [:]
     private var devices: [String: [ChatDeviceInfo]] = [:]
     private var pastDevices: [String: [ChatDeviceInfo]] = [:]
@@ -493,7 +545,8 @@ final class ChatRoomModel: ObservableObject {
         if let room {
             self.roomID = room.id
             self.privacy = room.locked ? .locked : .open
-            self.title = ChatListing.title(room, me: session.me)
+            self.title = ChatListing.title(room, me: session.me, firstWords: session.firstWords[room.id])
+            self.modelName = room.members?.first(where: { $0.kind == "model" })?.model
         } else {
             self.privacy = privacy
             self.title = ChatWords.newChat
@@ -516,9 +569,13 @@ final class ChatRoomModel: ObservableObject {
     // MARK: opening
 
     func load() async {
-        if DemoMode.chatDemo { lines = DemoMode.chatLines; phase = .ready; return }
+        if DemoMode.chatDemo { lines = DemoMode.chatLines; phase = .ready; modelChoices = DemoMode.chatModels; return }
         stopped = nil
-        guard let id = roomID else { phase = .ready; return }
+        guard let id = roomID else {
+            phase = .ready
+            await prepareNew()
+            return
+        }
         let t = token()
         if privacy == .locked {
             let open = await session.lockedIsOpen()
@@ -555,6 +612,8 @@ final class ChatRoomModel: ObservableObject {
             return ChatWriting(name: w.name, text: said, stage: w.stage)
         }
         if let name = answer.name, !name.isEmpty { title = name }
+        if let current = answer.members.first(where: { $0.kind == "model" })?.model, !current.isEmpty { modelName = current }
+        waitingForApproval = session.waitingForApproval
         safety = session.safety.rows(account: session.person, devices: devices)
         redraw(id, locked: answer.locked || privacy == .locked, t)
         if lastSeq > 0 { await session.api.read(id, upTo: lastSeq) }
@@ -572,6 +631,11 @@ final class ChatRoomModel: ObservableObject {
         }
         let entries = ordered.map { ChatOpener.entry($0, room: id, keys: session.keys, devices: devices, past: pastDevices, holders: holders, locked: locked) }
         lines = ChatTranscript.lines(entries: entries, me: session.me, writing: writing, showSpeakers: showSpeakers, shown: shown(_:))
+        // an unnamed chat is called by its first words where they were opened here (never a Locked chat's)
+        if !locked, let first = lines.first(where: { $0.side == .mine && !$0.unreadable }) {
+            session.noteFirstWords(room: id, from: first.text, locked: false)
+            if let name = session.firstWords[id], title.isEmpty || title == ChatWords.newChat { title = name }
+        }
         phase = .ready
     }
 
@@ -583,6 +647,7 @@ final class ChatRoomModel: ObservableObject {
             for _ in 0..<10 {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard let self, !Task.isCancelled, self.phase == .waitingForKeys, (try? self.check(t)) != nil else { break }
+                await self.session.refreshTrust()
                 try? await self.fetch(id, t)
             }
             self?.waiting = nil
@@ -611,6 +676,8 @@ final class ChatRoomModel: ObservableObject {
         draft = ""
         stopped = nil
         title = ChatWords.lockedTitle
+        modelName = nil
+        modelChoices = []
         if let id = roomID { session.forget(room: id) }
         phase = .locked
         replying = false
@@ -661,6 +728,15 @@ final class ChatRoomModel: ObservableObject {
         do {
             let device = try await session.ensureDevice()
             try check(t)
+            // a device that is waiting is sealed no keys: a chat started or answered here could not be opened here
+            await session.refreshTrust()
+            try check(t)
+            if let waiting = session.waitingForApproval {
+                waitingForApproval = waiting
+                stopped = ChatStopped(doing: ChatStopWords.sending, step: ChatStep.devices, next: "", key: ChatWords.waitingCheck, action: .retry,
+                                      words: ChatWords.waitingToSend(waiting.name), diagnosis: "other")
+                return
+            }
             if roomID == nil { try await start(device: device, t) }
             guard let id = roomID else { return }
             var seq = 0
@@ -691,7 +767,10 @@ final class ChatRoomModel: ObservableObject {
     private func start(device: ChatDevice, _ t: Token) async throws {
         let models = try await session.api.models()
         try check(t)
-        guard let model = ChatModelPick.pick(from: models, privacy: privacy) else { throw ChatSessionError.noModel }
+        // the one chosen above the box, if Aero still offers it, else the first it offers (for a Locked chat, the first that runs on the PC)
+        let allowed = ChatModelPick.choices(from: models, privacy: privacy, current: nil)
+        let wanted = modelName.flatMap { allowed.contains($0) ? $0 : nil }
+        guard let model = wanted ?? ChatModelPick.pick(from: models, privacy: privacy) else { throw ChatSessionError.noModel }
         let me = session.me
         let people = [me, "@pc", "@fingoid"]
         let found = try await session.api.devices(of: people)
@@ -709,6 +788,8 @@ final class ChatRoomModel: ObservableObject {
         session.keep(key, room: id, epoch: 0)
         roomID = id
         epoch = 0
+        modelName = model
+        members = [ChatMember(kind: "model", name: "fingus", nick: nil, model: model)]
     }
 
     // MARK: following a reply
@@ -736,6 +817,68 @@ final class ChatRoomModel: ObservableObject {
         guard let id = roomID else { return }
         let t = token()
         do { try await session.api.stop(id) } catch { fail(ChatStopWords.stoppingReply, error, t) }
+    }
+
+    // MARK: the model, and the chat's name
+
+    /// A new chat: which model it will start with, so it is shown above the box before anything is said.
+    private func prepareNew() async {
+        let t = token()
+        guard let models = try? await session.api.models(), (try? check(t)) != nil else { return }
+        modelChoices = ChatModelPick.choices(from: models, privacy: privacy, current: nil)
+        if modelName == nil { modelName = ChatModelPick.pick(from: models, privacy: privacy) }
+    }
+
+    /// The chooser opens: the models Aero offers now, for this chat's privacy.
+    func loadChoices() async {
+        let t = token()
+        do {
+            let models = try await session.api.models()
+            try check(t)
+            modelChoices = ChatModelPick.choices(from: models, privacy: privacy, current: modelName)
+        } catch is ChatStale {
+            return
+        } catch {
+            fail(ChatStopWords.listingModels, error, t)
+        }
+    }
+
+    /// Switch the model that answers. A chat not yet started only takes it for when it starts; a started one asks Aero, which refuses a model
+    /// this person could not add themselves, and the answer is read again so what is shown is what Aero holds.
+    func chooseModel(_ model: String) async {
+        guard model != modelName, !changing else { return }
+        guard let id = roomID else { modelName = model; return }
+        changing = true
+        stopped = nil
+        let t = token()
+        defer { if (try? check(t)) != nil { changing = false } }
+        do {
+            try await session.api.setModel(room: id, member: modelMember, model: model)
+            try check(t)
+            modelName = model
+            try await fetch(id, t)
+        } catch is ChatStale {
+            return
+        } catch {
+            fail(ChatStopWords.changingModel, error, t)
+        }
+    }
+
+    /// Her own name for this chat. Empty clears it, and the PC names the chat again.
+    func rename(to name: String) async {
+        guard let id = roomID else { return }
+        let words = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        stopped = nil
+        let t = token()
+        do {
+            try await session.api.renameRoom(id, to: words)
+            try check(t)
+            if words.isEmpty { title = session.firstWords[id] ?? ChatWords.newChat } else { title = words }
+        } catch is ChatStale {
+            return
+        } catch {
+            fail(ChatStopWords.renaming, error, t)
+        }
     }
 
     // MARK: the one shape

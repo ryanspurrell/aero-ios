@@ -1,0 +1,42 @@
+{
+ "about": "Invented keys only. Written by tools/device_signing_vectors.py from the Messages store's own approval_text, removal_text and verify.",
+ "approval_proof": "73Q9YgZy_pqodhuB82yUsHmCq9okov2VsH1NU7Ri_11LnxMWLzq5mMShLhLMyH0G033Mu_hDB_YjyvGd4Ai7WQ",
+ "approval_text": "approve|person-alice-0001|EBESExQVFhcYGRob|BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY|BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI|1700000000",
+ "approver_device": "AAECAwQFBgcICQoL",
+ "approver_sign_private_scalar_hex": "4fd39fe1ad2d3b87605fe47577c1642f45ae295494445e716a046e4939158152",
+ "approver_sign_public": "BMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4",
+ "devices_mine": {
+  "devices": [
+   {
+    "added": 1700000000.0,
+    "approved_by": null,
+    "device": "AAECAwQFBgcICQoL",
+    "ecdh": "BAHIu-xt8Cmt6TQiRnnuPKvySMieBK71F86m4Y7KCpG6SgGNoc6W5Id8U4SzwzQbRiglWmqMFe8Dj9Ssly13_Os",
+    "kind": "iPhone (Aero app)",
+    "name": "Mango",
+    "sign": "BMXhYgfIhJixUVUlLg71M6OT_0subgrLeAFHfWx34kdzMTCmr4QJjULiutfOEZF1suJvvAeFE-h9ulpSjV_Hou4",
+    "trusted": true
+   },
+   {
+    "added": 1700000000.0,
+    "approved_by": null,
+    "device": "EBESExQVFhcYGRob",
+    "ecdh": "BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY",
+    "kind": "Safari on iPhone",
+    "name": "Papaya",
+    "sign": "BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI",
+    "trusted": false
+   }
+  ],
+  "now": 1700000000.0
+ },
+ "person": "person-alice-0001",
+ "removal_proof": "LEw81tnyvHjLXjlqEU_KleSZqtaJCZF_1LD7SewDvfYsJqfrxVWM-Xrqt6aKFJpCowOmi161VfDhqaCCybw1VA",
+ "removal_text": "remove|person-alice-0001|EBESExQVFhcYGRob|1700000000",
+ "target": {
+  "device": "EBESExQVFhcYGRob",
+  "ecdh": "BEHfNYi-r1gqfNF-ob1rRUVYmNQVXL4qD1M3T8Q4vgzpxBcQu-4KxvZfEJbdixuclIN5QkoHosRxzpkOQfu0trY",
+  "sign": "BH08hzshVgL6v0AQVE__vncpOhhmeuOJUCdMgj2xmCQS2Ot5IJs8EU6RrdoCCGA1nAndlOS9z2REIRJdW64NjlI"
+ },
+ "ts": 1700000000
+}

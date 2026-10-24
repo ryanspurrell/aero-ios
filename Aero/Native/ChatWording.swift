@@ -33,6 +33,27 @@ enum ChatWords {
     static let safetyChanged = "These numbers are different from the last time you looked."
     static let safetyAccept = "They match"
     static let waitingForKeys = "This chat isn't ready on this phone yet. Your PC is sharing it."
+    static let waitingTitle = "Waiting for approval"
+    static let waitingCheck = "Check again"
+    /// This phone is a new device and a device she already uses has not approved it, so no chat key is sealed to it yet. Says its own fruit name
+    /// and where to approve it (the page says the same under Devices).
+    static func waitingNote(_ name: String?) -> String {
+        "\(name ?? "This phone") is waiting for you to approve it. On a device you already use, open You, then Devices. Tap \(name ?? "this phone"), then Approve."
+    }
+    static func waitingToSend(_ name: String?) -> String {
+        "\(name ?? "This phone") isn't approved yet, so it can't send. Approve it from a device you already use, then check again."
+    }
+    static let modelTitle = "Model"
+    static func modelChip(_ model: String) -> String { ChatModelPick.shown(model) }
+    static func modelLabel(_ model: String) -> String { "Model, \(ChatModelPick.shown(model)). Change" }
+    static let modelNote = "A Locked chat can only use models that run on your PC."
+    static let renameKey = "Rename chat"
+    static let renameTitle = "Rename chat"
+    static let renamePrompt = "A name for this chat"
+    static let renameSave = "Keep this name"
+    static let renameClear = "Let Fingus name it"
+    static let menu = "Chat menu"
+
     static let lockedTitle = "Locked chat"
     static let needsPC = "Chats live on your PC. Connect it to chat here."
     static let connectPC = "Connect your PC"
@@ -95,6 +116,9 @@ enum ChatStopWords {
     static let starting = "Starting the chat"
     static let stoppingReply = "Stopping the reply"
     static let checkingLock = "Checking the lock"
+    static let listingModels = "Listing the models"
+    static let changingModel = "Changing the model"
+    static let renaming = "Renaming the chat"
 
     /// The one shape for a failure of `error` while `doing` something. Anything not recognised is said as Aero's answer, never as a cause the
     /// app made up.

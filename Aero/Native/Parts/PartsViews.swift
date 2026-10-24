@@ -196,6 +196,7 @@ struct YouScreen: View {
     var close: () -> Void
 
     @State private var showParts = false
+    @State private var showDevices = DemoMode.devicesDemo
 
     var body: some View {
         ZStack {
@@ -206,6 +207,9 @@ struct YouScreen: View {
                     Button("Done", action: close).fx(Look.Size.tab, style: .subheadline).foregroundStyle(Look.Palette.soft).frame(minHeight: Look.Space.sizeTap)
                 }
                 row("Parts", detail: "Add or remove") { withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { showParts = true } }
+                if hasPC || DemoMode.devicesDemo {
+                    row(DevicesWords.youRow, detail: DevicesWords.youDetail) { withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { showDevices = true } }
+                }
                 VStack(alignment: .leading, spacing: Look.Space.hair) {
                     Toggle(isOn: $partsHome) { Text("Home first").fx(Look.Size.itemName, style: .headline).foregroundStyle(Look.Palette.fg) }
                     Text("Test. Off keeps the calendar first.").fx(Look.Size.itemMeta, style: .footnote).foregroundStyle(Look.Palette.soft)
@@ -222,6 +226,11 @@ struct YouScreen: View {
                 .fingusGround()
                 .transition(.move(edge: .trailing))
                 .zIndex(1)
+            }
+            if showDevices {
+                DevicesScreen(back: { withAnimation(.spring(response: Look.springResponse, dampingFraction: Look.springDamping)) { showDevices = false } })
+                    .transition(.move(edge: .trailing))
+                    .zIndex(1)
             }
         }
         .fingusGround()
