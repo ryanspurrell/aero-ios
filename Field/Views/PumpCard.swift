@@ -37,6 +37,7 @@ struct PumpCard: View {
 
     private var flows: String {
         "Flow before " + FieldWording.flow(sample.before) + ", after " + (sample.after.map(FieldWording.flow) ?? "not measured")
+            + (sample.after.map { ", mean " + FieldWording.flow((sample.before + $0) / 2) + ", " + FieldWording.flowBar(meanFlowError(sample.before, $0)) } ?? "")
     }
 }
 

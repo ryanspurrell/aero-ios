@@ -44,6 +44,7 @@ struct NumbersCard: View {
             row("Needs \(FieldWording.litres(m.minVol))", "From the same method.")
             row("Flow may change by \(m.tol.text()) L/min between before and after", "Picked, not grounded. The method gives no before-and-after rule in our notes.")
             row("Volume is the mean of the two flows times the minutes", "The method's usual calculation. A convention, not a measurement.")
+            row("Each flow reading may be off by 5 percent", "Picked from a pump study in our notes, not from your pump. The bars on volume and flow use it.")
             FieldNote("A first try from public records, to be corrected by the person who does the work. Nothing here says a lab will accept a sample marked Counts.")
         }
     }

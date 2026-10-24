@@ -23,7 +23,8 @@ enum FieldWording {
         switch st {
         case .counts:
             let v = s.stop.flatMap { e in s.after.map { volume(s.before, $0, monus(e, s.start)) } } ?? Rat(0)
-            return StateWords(headline: "Counts", detail: "\(litres(v)) collected. Flow stayed in range.", four: four, symbol: "checkmark.circle", hue: "green")
+            let bar = s.stop.flatMap { e in s.after.map { litreBar(volumeError(s.before, $0, monus(e, s.start))) } } ?? ""
+            return StateWords(headline: "Counts", detail: "\(litres(v)) collected, \(bar). Flow stayed in range.", four: four, symbol: "checkmark.circle", hue: "green")
         case .fails(let c):
             return StateWords(headline: "Doesn't count", detail: reason(m, s, c), four: four, symbol: "xmark.circle", hue: "red")
         case .notYet(.running):

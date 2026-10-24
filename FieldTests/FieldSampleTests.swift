@@ -175,3 +175,39 @@ final class FieldSampleTests: XCTestCase {
         XCTAssertEqual(m.lo, Rat(1, 2)); XCTAssertEqual(m.hi, 16); XCTAssertEqual(m.tol, Rat(1, 10)); XCTAssertEqual(m.minVol, 400)
     }
 }
+
+/// The error bar on a combined reading (FieldNoise.swift; BlindSpot.lean `recover_error_le_rowSum`, `rowSum_zero_band`). Exact numbers.
+final class FieldNoiseTests: XCTestCase {
+    func testReadingBoundIsFivePercentOfTheLargerFlow() {
+        XCTAssertEqual(flowReadingBound(2, 2), Rat(1, 10))
+        XCTAssertEqual(flowReadingBound(2, Rat(5, 2)), Rat(1, 8))      // 5% of 2.5
+        XCTAssertEqual(flowReadingBound(Rat(5, 2), 2), Rat(1, 8))      // order does not matter
+    }
+
+    func testMeanIsNeverMoreOffThanTheWorstReading() {
+        // rowSum = 1: the mean's bound equals the readings' bound
+        XCTAssertEqual(meanFlowError(2, Rat(5, 2)), flowReadingBound(2, Rat(5, 2)))
+        // worked case: readings 2 +/- 0.1 and 2.5 +/- 0.125; the mean 2.25 can be off by at most 0.1125, below 0.125
+        XCTAssertTrue(meanFlowError(2, Rat(5, 2)) >= Rat(9, 80))
+    }
+
+    func testVolumeBarIsMeanBoundTimesMinutes() {
+        XCTAssertEqual(volumeError(2, 2, 200), 20)                      // 400 L, plus or minus 20 L
+        XCTAssertEqual(volumeError(2, Rat(5, 2), 200), 25)
+        XCTAssertEqual(volumeError(2, 2, 0), 0)
+    }
+
+    func testBarRoundsUpNeverDown() {
+        XCTAssertEqual(Rat(1, 8).roundedUp(to: Rat(1, 10)), Rat(1, 5))
+        XCTAssertEqual(Rat(1, 10).roundedUp(to: Rat(1, 10)), Rat(1, 10))
+        XCTAssertEqual(Rat(0).roundedUp(to: 1), 0)
+        XCTAssertEqual(FieldWording.flowBar(Rat(1, 8)), "about ± 0.2 L/min")
+        XCTAssertEqual(FieldWording.flowBar(Rat(1, 10)), "about ± 0.1 L/min")
+        XCTAssertEqual(FieldWording.litreBar(Rat(41, 2)), "about ± 21 L")
+    }
+
+    func testCountsCardShowsTheBar() {
+        let s = Sample(id: 1, pump: 1, place: "example place", start: 0, stop: 200, before: 2, after: 2, height: nil)
+        XCTAssertEqual(FieldWording.words(Method.method7400, s).detail, "400 L collected, about ± 20 L. Flow stayed in range.")
+    }
+}
