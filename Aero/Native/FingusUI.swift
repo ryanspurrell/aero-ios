@@ -188,7 +188,7 @@ struct ClockText: View {
 /// The spine itself: the vertical line behind the rows.
 struct SpineColumn<Content: View>: View {
     let metrics: SpineMetrics
-    var spacing: CGFloat = 12
+    var spacing: CGFloat = Look.Space.snug
     @ViewBuilder var content: Content
 
     var body: some View {
